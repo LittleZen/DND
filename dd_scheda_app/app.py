@@ -56,6 +56,14 @@ def main(page: ft.Page):
     page.title = "Scheda DD"
     page.window_width = 1050
     page.window_height = 720
+    page.padding = 24
+    page.bgcolor = ft.Colors.SURFACE
+    page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
+    page.appbar = ft.AppBar(
+        title=ft.Text("Scheda del Personaggio"),
+        bgcolor=ft.Colors.PRIMARY_CONTAINER,
+        center_title=False,
+    )
 
     data = load_data()
 
@@ -172,25 +180,80 @@ def main(page: ft.Page):
 
     refresh_inventory()
 
-    page.add(
-        ft.Column(
+    header_card = ft.Container(
+        content=ft.Row(
             [
-                ft.Row([nome, xp]),
-                motivazione,
-                ft.Divider(),
+                ft.Column(
+                    [
+                        ft.Text("Dati Base", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Row([nome, xp], spacing=12),
+                        motivazione,
+                    ],
+                    expand=True,
+                    spacing=12,
+                )
+            ]
+        ),
+        padding=16,
+        border_radius=12,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
+    )
+
+    inventory_card = ft.Container(
+        content=ft.Column(
+            [
                 ft.Row(
                     [
-                        ft.Text("Inventario", size=18, weight=ft.FontWeight.BOLD),
-                        ft.Button("Aggiungi", on_click=add_item),
-                        ft.Button("Importa dal PDF", on_click=import_from_pdf),
+                        ft.Text("Inventario", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Row(
+                            [
+                                ft.ElevatedButton("Aggiungi", on_click=add_item),
+                                ft.OutlinedButton("Importa dal PDF", on_click=import_from_pdf),
+                            ],
+                            spacing=8,
+                        ),
                     ],
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 ),
-                ft.Container(inv_list, border=ft.border.all(1), border_radius=8, expand=True),
-                ft.Divider(),
+                ft.Container(
+                    inv_list,
+                    border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border_radius=10,
+                    padding=8,
+                    expand=True,
+                ),
+            ],
+            spacing=12,
+            expand=True,
+        ),
+        padding=16,
+        border_radius=12,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
+        expand=True,
+    )
+
+    notes_card = ft.Container(
+        content=ft.Column(
+            [
+                ft.Text("Appunti", size=16, weight=ft.FontWeight.BOLD),
                 appunti,
             ],
+            spacing=8,
+        ),
+        padding=16,
+        border_radius=12,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
+    )
+
+    page.add(
+        ft.Column(
+            [
+                header_card,
+                inventory_card,
+                notes_card,
+            ],
             expand=True,
+            spacing=16,
         )
     )
 
