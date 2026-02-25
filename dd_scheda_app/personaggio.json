@@ -1,0 +1,22 @@
+{
+  "nome": "Kaelion“Corno Rosso”Vyrix",
+  "motivazione": "Vendetta per il mio popolo",
+  "inventario_raw": "corda (x1)\rErbaspenta (x5)\r8 corone e 23 scellini\rrazione (x4)\rtenda (x1)\rpelliccia (x1)\rpozione (x1)\rscellini vecchi (x15)\rarco corto (x1)\rfreccia normale (x5)",
+  "xp_raw": "20xp\r10xp",
+  "inventario": [
+    "corda (x1)",
+    "Erbaspenta (x5)",
+    "8 corone e 23 scellini",
+    "razione (x4)",
+    "tenda (x1)",
+    "pelliccia (x1)",
+    "pozione (x1)",
+    "scellini vecchi (x15)",
+    "arco corto (x1)",
+    "freccia normale (x5)"
+  ],
+  "unguenti": [],
+  "talenti": [],
+  "qualita": [],
+  "appunti": ""
+}
