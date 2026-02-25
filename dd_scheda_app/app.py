@@ -59,10 +59,28 @@ def main(page: ft.Page):
     page.padding = 24
     page.bgcolor = ft.Colors.SURFACE
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
+    page.theme_mode = ft.ThemeMode.LIGHT
+
+    def toggle_theme(e):
+        page.theme_mode = (
+            ft.ThemeMode.DARK if page.theme_mode == ft.ThemeMode.LIGHT else ft.ThemeMode.LIGHT
+        )
+        theme_toggle.icon = (
+            ft.Icons.LIGHT_MODE if page.theme_mode == ft.ThemeMode.DARK else ft.Icons.DARK_MODE
+        )
+        page.update()
+
+    theme_toggle = ft.IconButton(
+        icon=ft.Icons.DARK_MODE,
+        tooltip="Dark mode",
+        on_click=toggle_theme,
+    )
+
     page.appbar = ft.AppBar(
         title=ft.Text("Scheda del Personaggio"),
         bgcolor=ft.Colors.PRIMARY_CONTAINER,
         center_title=False,
+        actions=[theme_toggle],
     )
 
     data = load_data()
@@ -71,17 +89,34 @@ def main(page: ft.Page):
         data["inventario"] = split_inventory_raw(data.get("inventario_raw", ""))
         save_data(data)
 
-    nome = ft.TextField(label="Nome", value=data.get("nome", ""), expand=True)
+    nome = ft.TextField(
+        label="Nome",
+        value=data.get("nome", ""),
+        prefix_icon=ft.Icons.PERSON,
+        expand=True,
+    )
     motivazione = ft.TextField(
         label="Motivazione",
         value=data.get("motivazione", ""),
+        prefix_icon=ft.Icons.MAP,
         multiline=True,
         min_lines=2,
         max_lines=4,
         expand=True,
     )
-    xp = ft.TextField(label="XP", value=data.get("xp_raw", ""), expand=True)
-    appunti = ft.TextField(label="Appunti", value=data.get("appunti", ""), multiline=True, expand=True)
+    xp = ft.TextField(
+        label="XP",
+        value=data.get("xp_raw", ""),
+        prefix_icon=ft.Icons.STAR,
+        expand=True,
+    )
+    appunti = ft.TextField(
+        label="Appunti",
+        value=data.get("appunti", ""),
+        prefix_icon=ft.Icons.NOTES,
+        multiline=True,
+        expand=True,
+    )
 
     inv_list = ft.ListView(expand=True, spacing=8, padding=10)
 
@@ -207,8 +242,13 @@ def main(page: ft.Page):
                         ft.Text("Inventario", size=16, weight=ft.FontWeight.BOLD),
                         ft.Row(
                             [
-                                ft.ElevatedButton("Aggiungi", on_click=add_item),
-                                ft.OutlinedButton("Importa dal PDF", on_click=import_from_pdf),
+                                ft.Button("Aggiungi", icon=ft.Icons.ADD, on_click=add_item),
+                                ft.Button(
+                                    "Importa dal PDF",
+                                    icon=ft.Icons.UPLOAD_FILE,
+                                    on_click=import_from_pdf,
+                                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                                ),
                             ],
                             spacing=8,
                         ),
@@ -217,7 +257,7 @@ def main(page: ft.Page):
                 ),
                 ft.Container(
                     inv_list,
-                    border=ft.border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
                     border_radius=10,
                     padding=8,
                     expand=True,
@@ -245,15 +285,42 @@ def main(page: ft.Page):
         bgcolor=ft.Colors.SURFACE_CONTAINER,
     )
 
+    scheda_view = ft.Row(
+        [
+            ft.Column([header_card], spacing=16, expand=True),
+            ft.Column([inventory_card], spacing=16, expand=True),
+        ],
+        spacing=16,
+        expand=True,
+    )
+
+    appunti_view = ft.Column([notes_card], expand=True, visible=False)
+
+    tab_active_bg = ft.Colors.PRIMARY_CONTAINER
+
+    btn_scheda = ft.Button("Scheda", icon=ft.Icons.BADGE, bgcolor=tab_active_bg)
+    btn_appunti = ft.Button("Appunti", icon=ft.Icons.NOTES)
+
+    def set_view(name: str):
+        is_scheda = name == "scheda"
+        scheda_view.visible = is_scheda
+        appunti_view.visible = not is_scheda
+        btn_scheda.bgcolor = tab_active_bg if is_scheda else None
+        btn_appunti.bgcolor = tab_active_bg if not is_scheda else None
+        page.update()
+
+    btn_scheda.on_click = lambda e: set_view("scheda")
+    btn_appunti.on_click = lambda e: set_view("appunti")
+
     page.add(
         ft.Column(
             [
-                header_card,
-                inventory_card,
-                notes_card,
+                ft.Row([btn_scheda, btn_appunti], spacing=8),
+                scheda_view,
+                appunti_view,
             ],
             expand=True,
-            spacing=16,
+            spacing=12,
         )
     )
 
