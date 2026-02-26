@@ -589,11 +589,11 @@ def main(page: ft.Page):
                         with open(p, "rb") as f:
                             b = f.read()
                         data_uri = f"data:image/png;base64,{base64.b64encode(b).decode('ascii')}"
-                        new_img = ft.Image(src=data_uri, width=770, height=150)
+                        new_img = ft.Image(src=data_uri, width=80, height=80)
                         new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
                         try:
-                            image_inner.controls[0] = new_container
-                            image_inner.update()
+                            image_holder.content = new_container
+                            image_holder.update()
                             try:
                                 avatar_status.value = f"Avatar caricato: {p.name} ({p.stat().st_size} bytes)"
                                 avatar_status.update()
@@ -665,30 +665,11 @@ def main(page: ft.Page):
         refresh_character_list()
         load_character_by_id(character_id)
 
-    header_card = ft.Container(
-        content=ft.Row(
-            [
-                ft.Column(
-                    [
-                        ft.Text("Dati Base", size=16, weight=ft.FontWeight.BOLD),
-                        ft.Row([nome, xp_block], spacing=12),
-                        motivazione,
-                    ],
-                    expand=True,
-                    spacing=12,
-                )
-            ]
-        ),
-        padding=16,
-        border_radius=12,
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
-        width=770,
-    )
-
-    # Image frame under Dati Base - load from img/avatars folder
+    # Avatar icon for Dati Base - load from img/avatars folder
     avatars_dir = Path(__file__).parent / "img" / "avatars"
     img_control = None
-    avatar_status = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+    avatar_status = ft.Text("", size=10, color=ft.Colors.ON_SURFACE_VARIANT)
+    avatar_status.visible = False
     
     # Load default avatar (avatar_default.png - proper PNG format)
     try:
@@ -707,7 +688,7 @@ def main(page: ft.Page):
             
             print(f"[DEBUG] Image size: {len(image_data)} bytes, base64: {len(b64_string)} chars")
             
-            img_control = ft.Image(src=data_uri, width=770, height=150)
+            img_control = ft.Image(src=data_uri, width=80, height=80)
             avatar_status.value = f"Avatar: {default_avatar.name}"
             print("[OK] Avatar loaded as base64 data URI")
         else:
@@ -715,12 +696,12 @@ def main(page: ft.Page):
             print(f"[WARNING] Avatar file not found at {default_avatar}")
             img_control = ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.PERSON, size=64, color=ft.Colors.OUTLINE),
-                    ft.Text("Avatar non trovato", size=11)
-                ], alignment=ft.MainAxisAlignment.CENTER, spacing=8),
+                    ft.Icon(ft.Icons.PERSON, size=40, color=ft.Colors.OUTLINE),
+                    ft.Text("Avatar non trovato", size=10)
+                ], alignment=ft.MainAxisAlignment.CENTER, spacing=4),
                 alignment=ft.Alignment(0, 0),
-                height=150,
-                width=770,
+                height=80,
+                width=80,
             )
     except Exception as ex:
         # Error loading avatar
@@ -728,10 +709,10 @@ def main(page: ft.Page):
         import traceback
         traceback.print_exc()
         img_control = ft.Container(
-            content=ft.Text(f"Errore caricamento avatar", size=12),
+            content=ft.Text("Errore avatar", size=10),
             alignment=ft.Alignment(0, 0),
-            height=150,
-            width=770,
+            height=80,
+            width=80,
         )
 
     # Add FilePicker and a button to change the image; save copies to img/avatars
@@ -773,11 +754,11 @@ def main(page: ft.Page):
                             b = f.read()
                         b64 = base64.b64encode(b).decode("ascii")
                         data_uri = f"data:image/png;base64,{b64}"
-                        new_img = ft.Image(src=data_uri, width=770, height=150)
+                        new_img = ft.Image(src=data_uri, width=80, height=80)
                         new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
-                        image_inner.controls[0] = new_container
+                        image_holder.content = new_container
                         img_control = new_container
-                        image_inner.update()
+                        image_holder.update()
                     except Exception:
                         pass
                     dm.data["avatar_path"] = str(dest)
@@ -811,12 +792,12 @@ def main(page: ft.Page):
                         b = f.read()
                     b64 = base64.b64encode(b).decode("ascii")
                     data_uri = f"data:image/png;base64,{b64}"
-                    new_img = ft.Image(src=data_uri, width=770, height=150)
+                    new_img = ft.Image(src=data_uri, width=80, height=80)
                     new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
                     try:
-                        image_inner.controls[0] = new_container
+                        image_holder.content = new_container
                         img_control = new_container
-                        image_inner.update()
+                        image_holder.update()
                     except Exception:
                         img_control = new_container
                 except Exception:
@@ -1081,8 +1062,12 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
-    # wire the main button to open the system picker — more reliable than modal buttons
-    change_btn = ft.Button("Cambia immagine", on_click=open_system_file_picker_global)
+    # Icon button to change avatar
+    change_btn = ft.IconButton(
+        icon=ft.Icons.IMAGE_OUTLINED,
+        tooltip="Cambia immagine",
+        on_click=open_system_file_picker_global,
+    )
 
     def validate_and_convert_avatar(src_path: Path, dest_path: Path) -> tuple[bool, str]:
         """
@@ -1113,18 +1098,22 @@ def main(page: ft.Page):
             except Exception as e:
                 return False, f"Formato immagine non valido: {e}"
             
-            # Check and resize if needed
-            max_dimension = 2048
+            # Resize to 80x80 (icon size) - crop center to maintain square
             width, height = img.size
+            needs_resize = width != 80 or height != 80
             
-            needs_resize = width > max_dimension or height > max_dimension
             if needs_resize:
-                # Calculate new size maintaining aspect ratio
-                ratio = min(max_dimension / width, max_dimension / height)
-                new_width = int(width * ratio)
-                new_height = int(height * ratio)
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                print(f"[AVATAR] Resized from {width}x{height} to {new_width}x{new_height}")
+                # Crop to square first (center crop)
+                min_dim = min(width, height)
+                left = (width - min_dim) // 2
+                top = (height - min_dim) // 2
+                right = left + min_dim
+                bottom = top + min_dim
+                img = img.crop((left, top, right, bottom))
+                
+                # Resize to 80x80
+                img = img.resize((80, 80), Image.Resampling.LANCZOS)
+                print(f"[AVATAR] Resized from {width}x{height} to 80x80")
             
             # Convert to RGB/RGBA for PNG (handles WebP, JPEG, etc.)
             if img.mode not in ('RGB', 'RGBA'):
@@ -1134,7 +1123,7 @@ def main(page: ft.Page):
             img.save(dest_path, 'PNG', optimize=True)
             
             final_size = dest_path.stat().st_size
-            msg = f"Avatar salvato: {width}x{height}px"
+            msg = f"Avatar salvato: 80x80px"
             if needs_resize:
                 msg += f" (ridimensionato da {width}x{height})"
             msg += f", {final_size // 1024}KB"
@@ -1146,17 +1135,57 @@ def main(page: ft.Page):
             traceback.print_exc()
             return False, f"Errore conversione: {e}"
 
-    image_inner = ft.Column(
-        [img_control, ft.Row([change_btn], alignment=ft.MainAxisAlignment.END), avatar_status],
-        spacing=8,
+    image_holder = ft.Container(
+        content=img_control,
+        width=80,
+        height=80,
+        alignment=ft.Alignment(0, 0),
     )
 
-    image_frame = ft.Container(
+    image_inner = ft.Column(
+        [
+            ft.Row(
+                [image_holder, change_btn],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+            avatar_status,
+        ],
+        spacing=6,
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+    )
+
+    avatar_block = ft.Container(
         content=image_inner,
         padding=8,
         border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+        width=150,
+        alignment=ft.Alignment(0, 0),
+    )
+
+    header_card = ft.Container(
+        content=ft.Row(
+            [
+                avatar_block,
+                ft.Column(
+                    [
+                        ft.Text("Dati Base", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Row([nome, xp_block], spacing=12),
+                        motivazione,
+                    ],
+                    expand=True,
+                    spacing=12,
+                ),
+            ],
+            alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=12,
+        ),
+        padding=16,
+        border_radius=12,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
         width=770,
     )
 
@@ -1185,14 +1214,13 @@ def main(page: ft.Page):
                     b64_string = base64.b64encode(image_data).decode('ascii')
                     data_uri = f"data:image/png;base64,{b64_string}"
                     
-                    new_img = ft.Image(src=data_uri, width=770, height=150)
+                    new_img = ft.Image(src=data_uri, width=80, height=80)
                     new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0,0))
                     
                     # Update only the image control in image_inner
-                    image_inner.controls[0] = new_container
+                    image_holder.content = new_container
                     img_control = new_container
-                    image_inner.update()
-                    image_frame.update()
+                    image_holder.update()
                     print(f"[RELOAD_AVATAR] Successfully updated with base64 data URI")
                     
                     # show confirmation and update status text
@@ -1214,11 +1242,10 @@ def main(page: ft.Page):
             else:
                 # show visible fallback in UI
                 print(f"[RELOAD_AVATAR] Avatar file NOT found at {dest}")
-                fb = ft.Container(content=ft.Text("Nessun avatar trovato in img/avatars"), alignment=ft.Alignment(0,0), height=150)
+                fb = ft.Container(content=ft.Text("Nessun avatar", size=10), alignment=ft.Alignment(0,0), height=80, width=80)
                 try:
-                    image_inner.controls[0] = fb
-                    image_inner.update()
-                    image_frame.update()
+                    image_holder.content = fb
+                    image_holder.update()
                 except Exception:
                     pass
                 page.snack_bar = ft.SnackBar(ft.Text("Nessun avatar trovato in img/avatars"))
@@ -1360,8 +1387,8 @@ def main(page: ft.Page):
         expand=True,
     )
 
-    # Left column containing header, image, and money - needs reference for avatar updates
-    left_column = ft.Column([header_card, image_frame, money_card], spacing=16, width=770, tight=True)
+    # Left column containing header and money
+    left_column = ft.Column([header_card, money_card], spacing=16, width=770, tight=True)
     
     scheda_view = ft.Row(
         [
@@ -1402,35 +1429,6 @@ def main(page: ft.Page):
         content=item_icon_preview,
         alignment=ft.Alignment(0, 0),
         padding=16,
-    )
-
-    # Character avatar in header (placeholder image using a random icon)
-    _avatar_icons = [
-        ft.Icons.PERSON,
-        ft.Icons.PERSON_OUTLINE,
-        ft.Icons.ACCOUNT_CIRCLE,
-        ft.Icons.FACE,
-        ft.Icons.BRANDING_WATERMARK,
-    ]
-    _rand_icon = random.choice(_avatar_icons)
-    character_avatar = ft.Container(
-        content=ft.Column(
-            [
-                ft.Icon(_rand_icon, size=44, color=ft.Colors.ON_PRIMARY),
-                ft.Text("Placeholder", size=10, color=ft.Colors.ON_PRIMARY),
-            ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            spacing=4,
-        ),
-        width=84,
-        height=84,
-        padding=8,
-        margin=ft.Margin.only(right=12, left=6),
-        border_radius=12,
-        bgcolor=ft.Colors.PRIMARY_CONTAINER,
-        border=ft.Border.all(2, ft.Colors.ON_PRIMARY),
-        tooltip="Avatar placeholder",
-        alignment=ft.Alignment(0, 0),
     )
 
     def update_icon_preview(e=None):
@@ -1665,31 +1663,6 @@ def main(page: ft.Page):
         delete_item_from_library(item["id"])
         refresh_items_library()
 
-    header_card = ft.Container(
-        content=ft.Row(
-            [
-                character_avatar,
-                ft.Column(
-                    [
-                        ft.Row([
-                            ft.Text("Dati Base", size=16, weight=ft.FontWeight.BOLD),
-                        ], alignment=ft.MainAxisAlignment.START),
-                        ft.Row([nome, xp_block], spacing=12),
-                        motivazione,
-                        # removed extra "Ricarica avatar" button; use "Cambia immagine" instead
-                    ],
-                    expand=True,
-                    spacing=12,
-                ),
-            ],
-            alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=12,
-        ),
-        padding=16,
-        border_radius=12,
-        bgcolor=ft.Colors.SURFACE_CONTAINER,
-        width=770,
-    )
 
     
 
