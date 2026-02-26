@@ -29,6 +29,11 @@ def _table_exists(conn, name: str) -> bool:
     return row is not None
 
 
+def sanitize_items(items: list) -> list:
+    """Filter out None, empty strings, and convert to strings"""
+    return [str(item).strip() for item in items if item and str(item).strip()]
+
+
 def _table_columns(conn, name: str) -> list[str]:
     cur = conn.cursor()
     rows = cur.execute(f"PRAGMA table_info({name})").fetchall()
@@ -343,9 +348,10 @@ def save_character(character_id: int, data: dict) -> None:
         for idx, it in enumerate(data.get("inventario", [])):
             if isinstance(it, dict) and "item_id" in it and it["item_id"]:
                 # New format: linked to library
+                item_name = it.get("name", "")  # Ottieni il nome dal dizionario
                 cur.execute(
-                    "INSERT INTO inventory_items (character_id, idx, item_id, qty) VALUES (?, ?, ?, ?)",
-                    (character_id, idx, it["item_id"], it.get("qty", 1)),
+                    "INSERT INTO inventory_items (character_id, idx, item_id, qty, item) VALUES (?, ?, ?, ?, ?)",
+                    (character_id, idx, it["item_id"], it.get("qty", 1), item_name),
                 )
             else:
                 # Legacy format: store as string

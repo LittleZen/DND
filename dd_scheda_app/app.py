@@ -11,7 +11,6 @@ import base64
 from bank import normalize_money, to_int
 from inventory import (
     DEFAULT_CATEGORY,
-    format_inventory_item,
     normalize_inventory_items,
     parse_inventory_item,
     split_inventory_raw,
@@ -64,8 +63,10 @@ def main(page: ft.Page):
             return
         try:
             save_character(current_character_id, data)
-        except Exception:
-            pass
+        except Exception as ex:
+            print(f"[SAVE ERROR] Failed to save: {ex}")
+            import traceback
+            traceback.print_exc()
 
     def schedule_save():
         # debounce saves using a Timer stored in save_timer_holder
@@ -94,7 +95,8 @@ def main(page: ft.Page):
             update_xp_background()
         except Exception:
             pass
-        persist()
+        data["xp_raw"] = xp.value
+        schedule_save()
         page.update()
 
     xp.on_change = xp_on_change
@@ -146,23 +148,39 @@ def main(page: ft.Page):
         text_size=14,
         expand=True,
     )
+
+    def on_appunti_change(e):
+        data["appunti"] = appunti.value
+        schedule_save()
+
+    appunti.on_change = on_appunti_change
+
+    def on_money_change(e):
+        data["money"]["corone"] = to_int(corone.value)
+        data["money"]["scellini"] = to_int(scellini.value)
+        data["money"]["rame"] = to_int(rame.value)
+        schedule_save()
+
     corone = ft.TextField(
         label="Corone",
         value=str(data.get("money", {}).get("corone", 0)),
         prefix_icon=ft.Icons.PAID,
         width=140,
+        on_change=on_money_change,
     )
     scellini = ft.TextField(
         label="Scellini",
         value=str(data.get("money", {}).get("scellini", 0)),
         prefix_icon=ft.Icons.MONETIZATION_ON,
         width=140,
+        on_change=on_money_change,
     )
     rame = ft.TextField(
         label="Rame",
         value=str(data.get("money", {}).get("rame", 0)),
         prefix_icon=ft.Icons.CURRENCY_BITCOIN,
         width=140,
+        on_change=on_money_change,
     )
 
     inv_grid = ft.GridView(
@@ -207,11 +225,11 @@ def main(page: ft.Page):
 
     def on_nome_change(e):
         data["nome"] = nome.value
-        persist()
+        schedule_save()
 
     def on_motivazione_change(e):
         data["motivazione"] = motivazione.value
-        persist()
+        schedule_save()
 
     def parse_xp_percent(value: str) -> float:
         if not value:
@@ -259,26 +277,18 @@ def main(page: ft.Page):
 
     def set_xp_percent(pct: int):
         pct = max(0, min(100, pct))
+        # Disable on_change handler temporarily to avoid double-triggering
+        xp.on_change = None
         xp.value = f"{pct}%"
+        xp.on_change = xp_on_change
+        # Update data directly and save
         data["xp_raw"] = xp.value
         update_xp_background()
-        persist()
-
-        save_timer = threading.Timer(0.4, do_save)
-        save_timer.daemon = True
-        save_timer.start()
-
-    def persist():
-        if current_character_id is None:
-            return
-        data["nome"] = nome.value
-        data["motivazione"] = motivazione.value
-        data["xp_raw"] = xp.value
-        data["appunti"] = appunti.value
-        data["money"]["corone"] = to_int(corone.value)
-        data["money"]["scellini"] = to_int(scellini.value)
-        data["money"]["rame"] = to_int(rame.value)
         schedule_save()
+
+    def sync_all_fields_to_data():
+        """Unused function - can be removed"""
+        pass
 
     def refresh_inventory():
         inv_grid.controls.clear()
@@ -331,7 +341,7 @@ def main(page: ft.Page):
                     # fallback: if raw string, parse and replace
                     name, q = parse_inventory_item(str(data["inventario"][i]))
                     data["inventario"][i] = {"name": name, "qty": q + 1, "category": DEFAULT_CATEGORY}
-                persist()
+                schedule_save()
                 refresh_inventory()
                 page.update()
 
@@ -348,7 +358,7 @@ def main(page: ft.Page):
                         data["inventario"].pop(i)
                     except Exception:
                         pass
-                persist()
+                schedule_save()
                 refresh_inventory()
                 page.update()
 
@@ -357,23 +367,23 @@ def main(page: ft.Page):
                     data["inventario"].pop(i)
                 except Exception:
                     pass
-                persist()
+                schedule_save()
                 refresh_inventory()
                 page.update()
 
             qty_field.on_change = lambda e, i=idx: (
-                data["inventario"].__setitem__(i, {**(data.get("inventario")[i] if isinstance(data.get("inventario")[i], dict) else {}), "name": item_name, "qty": int(e.control.value or 1)}) or persist()
+                data["inventario"].__setitem__(i, {**(data.get("inventario")[i] if isinstance(data.get("inventario")[i], dict) else {}), "name": item_name, "qty": int(e.control.value or 1)}) or schedule_save()
             )
 
             card = ft.Container(
-                content=ft.Row(
+                content=ft.Stack(
                     [
-                        ft.Container(width=12),
+                        # Contenuto centrato
                         ft.Column(
                             [
                                 ft.Container(expand=True),
                                 ft.Icon(icon, size=44, color=ft.Colors.PRIMARY),
-                                ft.Text(item_name, size=14, weight=ft.FontWeight.BOLD, max_lines=2),
+                                ft.Text(item_name, size=14, weight=ft.FontWeight.BOLD, max_lines=2, text_align=ft.TextAlign.CENTER),
                                 ft.Container(height=6),
                                 ft.Row(
                                     [
@@ -387,10 +397,10 @@ def main(page: ft.Page):
                                 ),
                                 ft.Container(expand=True),
                             ],
-                            expand=True,
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                             spacing=6,
                         ),
+                        # X posizionata in alto a destra
                         ft.Container(
                             content=ft.IconButton(
                                 icon=ft.Icons.CLOSE,
@@ -399,13 +409,12 @@ def main(page: ft.Page):
                                 icon_color=ft.Colors.ERROR,
                                 tooltip="Elimina",
                             ),
-                            width=28,
-                            alignment=ft.Alignment(1, -1),
+                            right=0,
+                            top=0,
                         ),
                     ],
-                    vertical_alignment=ft.CrossAxisAlignment.START,
                 ),
-                padding=ft.padding.only(left=8, top=4, right=4, bottom=10),
+                padding=10,
                 border_radius=12,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
                 border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
@@ -421,11 +430,11 @@ def main(page: ft.Page):
 
             def on_change(e, idx=i):
                 data["imparato"][idx] = e.control.value
-                persist()
+                schedule_save()
 
             def on_delete(e, idx=i):
                 data["imparato"].pop(idx)
-                persist()
+                schedule_save()
                 refresh_imparato()
                 page.update()
 
@@ -473,7 +482,7 @@ def main(page: ft.Page):
         xp.value = data["xp_raw"]
         appunti.value = data["appunti"]
 
-        persist()
+        schedule_save()
         refresh_inventory()
 
         page.snack_bar = ft.SnackBar(ft.Text("Import completato dal PDF ✅"))
@@ -484,13 +493,13 @@ def main(page: ft.Page):
 
     def add_qualita(e):
         data.setdefault("qualita", []).append("Nuova qualità")
-        persist()
+        schedule_save()
         refresh_qualita()
         page.update()
 
     def add_imparato(e):
         data.setdefault("imparato", []).append("Nuova conoscenza")
-        persist()
+        schedule_save()
         refresh_imparato()
         page.update()
 
@@ -501,14 +510,14 @@ def main(page: ft.Page):
 
             def on_change(e, idx=i):
                 data["qualita"][idx] = e.control.value
-                persist()
+                schedule_save()
 
             def on_delete(e, idx=i):
                 try:
                     data["qualita"].pop(idx)
                 except Exception:
                     pass
-                persist()
+                schedule_save()
                 refresh_qualita()
                 page.update()
 
@@ -777,11 +786,8 @@ def main(page: ft.Page):
 
     def reload_avatar(e=None):
         try:
-            print(f"reload_avatar called; current_character_id={current_character_id}")
             avatars_dir = Path(__file__).parent / "img" / "avatars"
             dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
-            print("checking avatar path:", dest)
-            print("exists?", dest.exists())
             if dest.exists():
                 try:
                     with open(dest, "rb") as f:
@@ -789,29 +795,18 @@ def main(page: ft.Page):
                     try:
                         b64 = base64.b64encode(b).decode("ascii")
                         data_uri = f"data:image/png;base64,{b64}"
-                        print("creating ft.Image from data URI (length):", len(data_uri))
                         new_img = ft.Image(src=data_uri, width=650, height=180)
                         new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0,0))
-                        print("ft.Image and container created successfully")
-                    except Exception as ex_img:
-                        import traceback
-                        print("exception while creating ft.Image:")
-                        traceback.print_exc()
+                    except Exception:
                         raise
                     try:
-                        print("attempting to replace image_inner.controls[0]")
                         image_inner.controls[0] = new_container
                         image_inner.update()
-                        print("replaced image_inner.controls[0]")
-                    except Exception as ex1:
-                        print("failed to replace image_inner.controls[0]:", ex1)
+                    except Exception:
                         try:
-                            print("fallback: setting image_frame.content to image")
                             image_frame.content = new_container
                             image_frame.update()
-                            print("replaced image_frame.content with image")
-                        except Exception as ex2:
-                            print("failed to set image_frame.content:", ex2)
+                        except Exception:
                             # final fallback: show a visible icon so user can see the area updated
                             fb = ft.Container(
                                 content=ft.Column([
@@ -824,9 +819,7 @@ def main(page: ft.Page):
                             try:
                                 image_frame.content = fb
                                 image_frame.update()
-                                print("applied icon fallback to image_frame.content")
-                            except Exception as ex3:
-                                print("failed to apply final fallback:", ex3)
+                            except Exception:
                                 img_control = new_container
                     # show confirmation and update status text
                     try:
@@ -839,23 +832,17 @@ def main(page: ft.Page):
                         page.snack_bar.open = True
                     except Exception:
                         pass
-                except Exception as ex:
-                    import traceback
-                    print("exception inside avatar load block:")
-                    traceback.print_exc()
-                    # re-raise so outer handler also logs if needed
-                    # but do not crash the app; for now we continue
-                    # raise
+                except Exception:
+                    pass
                 page.update()
             else:
-                print("avatar file not found:", dest)
                 # show visible fallback in UI
                 fb = ft.Container(content=ft.Text("Nessun avatar trovato in img/avatars"), alignment=ft.Alignment(0,0), height=180)
                 try:
                     image_frame.content = fb
                     image_frame.update()
-                except Exception as ex:
-                    print("failed to set missing-file fallback:", ex)
+                except Exception:
+                    pass
                 page.snack_bar = ft.SnackBar(ft.Text("Nessun avatar trovato in img/avatars"))
                 page.snack_bar.open = True
                 page.update()
@@ -873,7 +860,6 @@ def main(page: ft.Page):
         path_field = ft.TextField(label="Percorso locale del file immagine", width=450)
 
         def use_path_click(ev):
-            print("use_path_click invoked")
             try:
                 src = path_field.value or ""
                 src_path = Path(src)
@@ -904,7 +890,6 @@ def main(page: ft.Page):
                     pass
                 page.update()
             except Exception as ex:
-                print("use_path_click exception:", ex)
                 try:
                     page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
                     page.snack_bar.open = True
@@ -913,12 +898,10 @@ def main(page: ft.Page):
                     pass
 
         def close_modal(ev=None):
-            print("close_modal invoked")
             try:
                 page.overlay.remove(modal)
                 page.update()
             except Exception as ex:
-                print("close_modal exception:", ex)
                 pass
 
         def open_system_file_picker(ev=None):
@@ -935,12 +918,10 @@ def main(page: ft.Page):
                     root.destroy()
                 except Exception as ex:
                     file_path = ""
-                print("_pick returned file_path:", file_path)
                 if not file_path:
                     return
 
                 def _do():
-                    print("_do running copy for:", file_path)
                     try:
                         src_path = Path(file_path)
                         dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
@@ -1019,17 +1000,11 @@ def main(page: ft.Page):
             pass
         page.overlay.append(modal)
         page.update()
-        print("open_manual_dialog: overlay appended to page.overlay")
 
     def change_image_click(e):
         try:
-            print("change_image_click invoked")
             open_manual_dialog(e)
-            print("open_manual_dialog returned")
         except Exception as ex:
-            import traceback
-            print("exception in change_image_click:")
-            traceback.print_exc()
             try:
                 page.snack_bar = ft.SnackBar(ft.Text(f"Errore aprendo la dialog: {ex}"))
                 page.snack_bar.open = True
@@ -1256,6 +1231,18 @@ def main(page: ft.Page):
 
     # Items Library View
     items_library_list = ft.ListView(expand=True, spacing=8, padding=10)
+    items_search_field = ft.TextField(
+        label="Cerca per nome o effetto",
+        prefix_icon=ft.Icons.SEARCH,
+        width=300,
+    )
+    
+    def on_items_search_change(e):
+        """Aggiorna la lista quando il testo di ricerca cambia"""
+        refresh_items_library()
+    
+    items_search_field.on_change = on_items_search_change
+
     item_name_edit = ft.TextField(label="Nome", expand=True)
 
     item_icon_preview = ft.Icon(
@@ -1290,7 +1277,7 @@ def main(page: ft.Page):
         width=84,
         height=84,
         padding=8,
-        margin=ft.margin.only(right=12, left=6),
+        margin=ft.Margin.only(right=12, left=6),
         border_radius=12,
         bgcolor=ft.Colors.PRIMARY_CONTAINER,
         border=ft.Border.all(2, ft.Colors.ON_PRIMARY),
@@ -1327,7 +1314,15 @@ def main(page: ft.Page):
     items_card = ft.Container(
         content=ft.Column(
             [
-                ft.Text("Libreria Oggetti", size=16, weight=ft.FontWeight.BOLD),
+                ft.Row(
+                    [
+                        ft.Text("Libreria Oggetti", size=16, weight=ft.FontWeight.BOLD),
+                        ft.Container(expand=True),
+                        items_search_field,
+                    ],
+                    alignment=ft.MainAxisAlignment.START,
+                    spacing=12,
+                ),
                 ft.Container(
                     items_library_list,
                     border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
@@ -1348,8 +1343,47 @@ def main(page: ft.Page):
     def refresh_items_library():
         items_library_list.controls.clear()
         items = get_all_items()
+        
+        # Filtro in base al testo di ricerca
+        search_text = items_search_field.value.lower().strip()
+        if search_text:
+            items = [
+                item for item in items
+                if search_text in item["name"].lower() or search_text in (item.get("effect") or "").lower()
+            ]
+        
         for item in items:
             icon = CATEGORY_ICONS.get(item["category"], ft.Icons.HELP_OUTLINE)
+            
+            # Conte quanti di questo item abbiamo nell'inventario
+            item_count = 0
+            for inv_item in data.get("inventario", []):
+                if isinstance(inv_item, dict) and inv_item.get("item_id") == item["id"]:
+                    item_count += inv_item.get("qty", 1)
+            
+            def on_add_to_inventory(e, i=item):
+                if current_character_id is None:
+                    page.snack_bar = ft.SnackBar(ft.Text("Carica o crea un personaggio prima"))
+                    page.snack_bar.open = True
+                    page.update()
+                    return
+                # Aggiungi l'item all'inventario con nome e item_id
+                data["inventario"].append({"item_id": i["id"], "name": i["name"], "qty": 1})
+                schedule_save()
+                refresh_inventory()
+                refresh_items_library()  # Aggiorna il contatore
+                page.snack_bar = ft.SnackBar(ft.Text(f"'{i['name']}' aggiunto all'inventario"))
+                page.snack_bar.open = True
+                page.update()
+            
+            # Badge con contatore
+            counter_badge = ft.Container(
+                content=ft.Text(str(item_count), size=10, color=ft.Colors.ON_PRIMARY, weight=ft.FontWeight.BOLD),
+                padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+                border_radius=10,
+                bgcolor=ft.Colors.PRIMARY if item_count > 0 else ft.Colors.OUTLINE,
+            ) if item_count > 0 else ft.Container()
+            
             items_library_list.controls.append(
                 ft.Container(
                     content=ft.Row(
@@ -1357,12 +1391,25 @@ def main(page: ft.Page):
                             ft.Icon(icon, size=32, color=ft.Colors.PRIMARY),
                             ft.Column(
                                 [
-                                    ft.Text(item["name"], size=14, weight=ft.FontWeight.BOLD),
+                                    ft.Row(
+                                        [
+                                            ft.Text(item["name"], size=14, weight=ft.FontWeight.BOLD),
+                                            counter_badge,
+                                        ],
+                                        spacing=8,
+                                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                    ),
                                     ft.Text(item["category"], size=11, color=ft.Colors.ON_SURFACE_VARIANT),
                                     ft.Text(item["description"], size=11, max_lines=1) if item["description"] else None,
                                 ],
                                 spacing=2,
                                 expand=True,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.ADD,
+                                tooltip="Aggiungi all'inventario",
+                                on_click=on_add_to_inventory,
+                                icon_color=ft.Colors.GREEN,
                             ),
                             ft.IconButton(
                                 icon=ft.Icons.EDIT,
@@ -1419,7 +1466,7 @@ def main(page: ft.Page):
             # Add the item to the current character's inventory
             if current_character_id is not None:
                 data["inventario"].append({"item_id": new_item_id, "qty": 1})
-                persist()
+                schedule_save()
                 refresh_inventory()
         clear_item_form()
         refresh_items_library()
@@ -1554,6 +1601,14 @@ def main(page: ft.Page):
 
     editor_view = ft.Column(
         [
+            ft.Row(
+                [
+                    ft.IconButton(icon=ft.Icons.SAVE, tooltip="Salva manualmente", on_click=lambda e: do_save()),
+                    theme_toggle,
+                    ft.Container(expand=True),
+                ],
+                spacing=8,
+            ),
             ft.Row([btn_scheda, btn_appunti, btn_qualita, btn_items], spacing=8),
             scheda_view,
             appunti_view,
