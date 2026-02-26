@@ -82,8 +82,38 @@ def main(page: ft.Page):
     # Basic UI fields that some handlers expect
     nome = ft.TextField(label="Nome", value=data.get("nome", ""), expand=True)
     motivazione = ft.TextField(label="Motivazione", value=data.get("motivazione", ""), expand=True)
+
     xp = ft.TextField(label="XP", value=data.get("xp_raw", ""), width=100)
-    xp_block = ft.Row([xp], spacing=6)
+
+    def xp_on_change(e):
+        try:
+            update_xp_background()
+        except Exception:
+            pass
+        persist()
+        page.update()
+
+    xp.on_change = xp_on_change
+
+    def inc_xp(e):
+        pct = get_xp_percent_int() + 1
+        set_xp_percent(pct)
+        page.update()
+
+    def dec_xp(e):
+        pct = get_xp_percent_int() - 1
+        set_xp_percent(pct)
+        page.update()
+
+    xp_block = ft.Row(
+        [
+            ft.IconButton(icon=ft.Icons.REMOVE, on_click=dec_xp, icon_size=16),
+            xp,
+            ft.IconButton(icon=ft.Icons.ADD, on_click=inc_xp, icon_size=16),
+        ],
+        spacing=6,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+    )
 
     def toggle_theme(e):
         page.theme_mode = (
@@ -566,6 +596,7 @@ def main(page: ft.Page):
         padding=16,
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
+        width=650,
     )
 
     money_card = ft.Container(
@@ -579,6 +610,7 @@ def main(page: ft.Page):
         padding=16,
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
+        width=650,
     )
 
     inventory_card = ft.Container(
@@ -697,7 +729,7 @@ def main(page: ft.Page):
 
     scheda_view = ft.Row(
         [
-            ft.Column([header_card, money_card], spacing=16, expand=True),
+            ft.Column([header_card, money_card], spacing=16, width=650),
             ft.Column([inventory_card], spacing=16, expand=True),
         ],
         spacing=16,
@@ -721,6 +753,17 @@ def main(page: ft.Page):
         content=item_icon_preview,
         alignment=ft.Alignment(0, 0),
         padding=16,
+    )
+
+    # Character avatar in header
+    character_avatar = ft.Container(
+        content=ft.Icon(ft.Icons.PERSON, size=56, color=ft.Colors.PRIMARY),
+        width=72,
+        height=72,
+        padding=8,
+        border_radius=999,
+        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+        alignment=ft.Alignment(0, 0),
     )
 
     def update_icon_preview(e=None):
@@ -748,6 +791,27 @@ def main(page: ft.Page):
     item_description_edit = ft.TextField(label="Descrizione", multiline=True, min_lines=2, max_lines=3)
     item_effect_edit = ft.TextField(label="Effetto", multiline=True, min_lines=2, max_lines=3)
     editing_item_id = None
+
+    items_card = ft.Container(
+        content=ft.Column(
+            [
+                ft.Text("Libreria Oggetti", size=16, weight=ft.FontWeight.BOLD),
+                ft.Container(
+                    items_library_list,
+                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border_radius=10,
+                    padding=8,
+                    expand=True,
+                ),
+            ],
+            spacing=12,
+            expand=True,
+        ),
+        padding=16,
+        border_radius=12,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
+        expand=2,
+    )
 
     def refresh_items_library():
         items_library_list.controls.clear()
@@ -842,25 +906,29 @@ def main(page: ft.Page):
         delete_item_from_library(item["id"])
         refresh_items_library()
 
-    items_card = ft.Container(
-        content=ft.Column(
+    header_card = ft.Container(
+        content=ft.Row(
             [
-                ft.Text("Libreria Oggetti", size=16, weight=ft.FontWeight.BOLD),
-                ft.Container(
-                    items_library_list,
-                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
-                    border_radius=10,
-                    padding=8,
+                character_avatar,
+                ft.Column(
+                    [
+                        ft.Row([
+                            ft.Text("Dati Base", size=16, weight=ft.FontWeight.BOLD),
+                        ], alignment=ft.MainAxisAlignment.START),
+                        ft.Row([nome, xp_block], spacing=12),
+                        motivazione,
+                    ],
                     expand=True,
+                    spacing=12,
                 ),
             ],
+            alignment=ft.CrossAxisAlignment.CENTER,
             spacing=12,
-            expand=True,
         ),
         padding=16,
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
-        expand=2,
+        width=650,
     )
 
     items_form_card = ft.Container(
