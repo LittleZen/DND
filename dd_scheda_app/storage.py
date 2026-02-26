@@ -66,10 +66,15 @@ def init_db() -> None:
                 xp_raw TEXT,
                 inventario_raw TEXT,
                 appunti TEXT,
+                avatar_path TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        # Migration: add avatar_path column if missing
+        cols = _table_columns(conn, "characters")
+        if "avatar_path" not in cols:
+            cur.execute("ALTER TABLE characters ADD COLUMN avatar_path TEXT")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS inventory_items (
@@ -257,7 +262,7 @@ def load_character(character_id: int) -> dict:
     with _connect() as conn:
         cur = conn.cursor()
         row = cur.execute(
-            "SELECT nome, motivazione, xp_raw, inventario_raw, appunti FROM characters WHERE id = ?",
+            "SELECT nome, motivazione, xp_raw, inventario_raw, appunti, avatar_path FROM characters WHERE id = ?",
             (character_id,),
         ).fetchone()
         inv_rows = cur.execute(
@@ -287,8 +292,9 @@ def load_character(character_id: int) -> dict:
             "imparato": [],
             "appunti": "",
             "money": default_money(),
+            "avatar_path": "",
         }
-    nome, motivazione, xp_raw, inventario_raw, appunti = row
+    nome, motivazione, xp_raw, inventario_raw, appunti, avatar_path = row
     inventario = []
     for item_id, qty, item_str, category in inv_rows:
         if item_id:
@@ -322,6 +328,7 @@ def load_character(character_id: int) -> dict:
         "imparato": imparato,
         "appunti": appunti,
         "money": money,
+        "avatar_path": avatar_path or "",
     }
 
 
@@ -332,7 +339,7 @@ def save_character(character_id: int, data: dict) -> None:
         cur.execute(
             """
             UPDATE characters
-            SET nome = ?, motivazione = ?, xp_raw = ?, inventario_raw = ?, appunti = ?
+            SET nome = ?, motivazione = ?, xp_raw = ?, inventario_raw = ?, appunti = ?, avatar_path = ?
             WHERE id = ?
             """,
             (
@@ -341,6 +348,7 @@ def save_character(character_id: int, data: dict) -> None:
                 data.get("xp_raw", ""),
                 data.get("inventario_raw", ""),
                 data.get("appunti", ""),
+                data.get("avatar_path", ""),
                 character_id,
             ),
         )

@@ -35,8 +35,13 @@ PDF_FILE = Path(__file__).parent / "scheda.pdf"
 
 def main(page: ft.Page):
     page.title = "Scheda DD"
-    page.window_width = 1050
-    page.window_height = 720
+    page.window_width = 1230
+    page.window_height = 900
+    page.window_resizable = False
+    page.window_min_width = 1230
+    page.window_min_height = 900
+    page.window_max_width = 1230
+    page.window_max_height = 900
     page.padding = 24
     page.bgcolor = ft.Colors.SURFACE
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
@@ -177,7 +182,7 @@ def main(page: ft.Page):
         expand=True,
         runs_count=4,
         max_extent=180,
-        child_aspect_ratio=1.0,
+        child_aspect_ratio=1.1,
         spacing=10,
         run_spacing=10,
         padding=10,
@@ -374,10 +379,9 @@ def main(page: ft.Page):
                         # Contenuto centrato
                         ft.Column(
                             [
-                                ft.Container(expand=True),
                                 ft.Icon(icon, size=32, color=ft.Colors.PRIMARY),
                                 ft.Text(item_name, size=12, weight=ft.FontWeight.BOLD, max_lines=2, text_align=ft.TextAlign.CENTER),
-                                ft.Container(height=4),
+                                ft.Container(height=2),
                                 ft.Row(
                                     [
                                         ft.IconButton(ft.Icons.REMOVE, on_click=on_dec, icon_size=14),
@@ -388,8 +392,8 @@ def main(page: ft.Page):
                                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                     spacing=4,
                                 ),
-                                ft.Container(expand=True),
                             ],
+                            alignment=ft.MainAxisAlignment.CENTER,
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                             spacing=4,
                         ),
@@ -416,53 +420,73 @@ def main(page: ft.Page):
 
             inv_grid.controls.append(card)
 
-    def refresh_imparato():
-        imparato_list.controls.clear()
-        for i, it in enumerate(data.get("imparato", [])):
-            txt = ft.TextField(value=it, expand=True)
-
-            def on_change(e, idx=i):
-                data["imparato"][idx] = e.control.value
-                schedule_save()
-
-            def on_delete(e, idx=i):
-                data["imparato"].pop(idx)
-                schedule_save()
-                refresh_imparato()
-                page.update()
-
-            txt.on_change = on_change
-
-            imparato_list.controls.append(
-                ft.Row(
-                    [txt, ft.IconButton(ft.Icons.DELETE_OUTLINE, on_click=on_delete)],
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                )
-            )
-
     def add_item(e):
-        # Switch to Item tab to create a new item
-        set_view("items")
+        data.setdefault("inventario", []).append(
+            {"name": "Nuovo oggetto", "qty": 1, "category": DEFAULT_CATEGORY}
+        )
+        schedule_save()
+        refresh_inventory()
+        page.update()
 
-    def import_from_pdf(e=None):
-        if dm.current_character_id is None:
-            page.snack_bar = ft.SnackBar(ft.Text("Seleziona o crea un personaggio prima di importare"))
-            page.snack_bar.open = True
-            page.update()
-            return
+    def import_from_pdf(e):
         if not PDF_FILE.exists():
-            page.snack_bar = ft.SnackBar(ft.Text(f"Non trovo {PDF_FILE.name} nella cartella progetto"))
+            page.snack_bar = ft.SnackBar(ft.Text("PDF non trovato"))
             page.snack_bar.open = True
             page.update()
             return
 
         fields = read_pdf_fields(PDF_FILE)
+        normalized_fields = {
+            re.sub(r"[\s_]+", "", k).lower(): v for k, v in (fields or {}).items()
+        }
 
-        # Campi del tuo PDF: untitled1/2/26/27 :contentReference[oaicite:1]{index=1}
-        data["nome"] = fields.get("untitled1", "")
-        data["motivazione"] = fields.get("untitled2", "")
-        data["inventario_raw"] = fields.get("untitled26", "")
-        data["xp_raw"] = fields.get("untitled27", "")
+        def pick(*keys):
+            for key in keys:
+                if key in fields and fields[key]:
+                    return fields[key]
+            return ""
+
+        def pick_norm(*keys):
+            for key in keys:
+                cleaned = re.sub(r"[\s_]+", "", key).lower()
+                val = normalized_fields.get(cleaned)
+                if val:
+                    return val
+            return ""
+
+        nome_val = pick("Nome", "nome") or pick_norm("nome", "nomepersonaggio", "personaggio")
+        if nome_val:
+            data["nome"] = nome_val
+
+        motivazione_val = pick("Motivazione", "motivazione") or pick_norm("motivazione", "background")
+        if motivazione_val:
+            data["motivazione"] = motivazione_val
+
+        appunti_val = pick("Appunti", "appunti") or pick_norm("appunti", "note", "notevarie")
+        if appunti_val:
+            data["appunti"] = appunti_val
+
+        xp_val = pick("XP", "Px", "PX", "xp") or pick_norm("xp", "px")
+        if xp_val:
+            data["xp_raw"] = xp_val
+
+        money = data.get("money", {})
+        corone_val = pick("Corone", "corone") or pick_norm("corone")
+        scellini_val = pick("Scellini", "scellini") or pick_norm("scellini")
+        rame_val = pick("Rame", "rame") or pick_norm("rame")
+        if corone_val:
+            money["corone"] = to_int(corone_val)
+        if scellini_val:
+            money["scellini"] = to_int(scellini_val)
+        if rame_val:
+            money["rame"] = to_int(rame_val)
+        data["money"] = normalize_money(money)
+
+        inventario_val = pick("Inventario", "inventario", "Equipaggiamento", "equipaggiamento") or pick_norm(
+            "inventario", "equipaggiamento"
+        )
+        if inventario_val:
+            data["inventario_raw"] = inventario_val
 
         # inventario strutturato
         data["inventario"] = normalize_inventory_items(
@@ -481,6 +505,33 @@ def main(page: ft.Page):
         page.snack_bar = ft.SnackBar(ft.Text("Import completato dal PDF ✅"))
         page.snack_bar.open = True
         page.update()
+
+    def refresh_imparato():
+        imparato_list.controls.clear()
+        for i, it in enumerate(data.get("imparato", [])):
+            txt = ft.TextField(value=it, expand=True)
+
+            def on_change(e, idx=i):
+                data["imparato"][idx] = e.control.value
+                schedule_save()
+
+            def on_delete(e, idx=i):
+                try:
+                    data["imparato"].pop(idx)
+                except Exception:
+                    pass
+                schedule_save()
+                refresh_imparato()
+                page.update()
+
+            txt.on_change = on_change
+
+            imparato_list.controls.append(
+                ft.Row(
+                    [txt, ft.IconButton(ft.Icons.DELETE_OUTLINE, on_click=on_delete)],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
 
     refresh_inventory()
 
@@ -538,17 +589,18 @@ def main(page: ft.Page):
                         with open(p, "rb") as f:
                             b = f.read()
                         data_uri = f"data:image/png;base64,{base64.b64encode(b).decode('ascii')}"
-                        new_img = ft.Image(src=data_uri, width=650, height=180)
+                        new_img = ft.Image(src=data_uri, width=770, height=150)
+                        new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
                         try:
-                            image_inner.controls[0] = new_img
+                            image_inner.controls[0] = new_container
                             image_inner.update()
                             try:
-                                avatar_status.value = f"Avatar caricato: {dest.name} ({dest.stat().st_size} bytes)"
+                                avatar_status.value = f"Avatar caricato: {p.name} ({p.stat().st_size} bytes)"
                                 avatar_status.update()
                             except Exception:
                                 pass
                         except Exception:
-                            img_control = new_img
+                            pass
                     except Exception:
                         pass
             else:
@@ -630,52 +682,61 @@ def main(page: ft.Page):
         padding=16,
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
-        width=650,
+        width=770,
     )
 
-    # Image frame under Dati Base - prefer images in img/avatars if present
+    # Image frame under Dati Base - load from img/avatars folder
     avatars_dir = Path(__file__).parent / "img" / "avatars"
     img_control = None
     avatar_status = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+    
+    # Load default avatar (avatar_default.png - proper PNG format)
     try:
-        # look for avatar_{id}.png, avatar_default.png or any png
-        candidates = []
-        candidates.append(avatars_dir / "avatar_default.png")
-        candidates.extend(sorted(avatars_dir.glob("*.png"))) if avatars_dir.exists() else None
-        loaded = None
-        for c in candidates:
-            if c and c.exists():
-                try:
-                    with open(c, "rb") as f:
-                        b = f.read()
-                    data_uri = f"data:image/png;base64,{base64.b64encode(b).decode('ascii')}"
-                    new_img = ft.Image(src=data_uri, width=650, height=180)
-                    img_control = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
-                    try:
-                        avatar_status.value = f"Avatar caricato: {c.name} ({c.stat().st_size} bytes)"
-                    except Exception:
-                        pass
-                    loaded = c
-                    break
-                except Exception:
-                    continue
-        if not img_control:
-            # fallback to icon in img/icons if present
-            img_path = Path(__file__).parent / "img" / "icons" / "pixel-art-woman-warrior-rpg-classic-style_865365-9.avif"
-            if img_path.exists():
-                try:
-                    img_uri = img_path.resolve().as_uri()
-                    img_control = ft.Image(src=img_uri, width=650, height=180)
-                    avatar_status.value = ""
-                except Exception:
-                    img_control = ft.Container(ft.Text("Impossibile visualizzare l'immagine (formato non supportato)"), alignment=ft.Alignment(0, 0), height=180)
-            else:
-                img_control = ft.Container(ft.Text("No image found"), alignment=ft.Alignment(0, 0), height=180)
-    except Exception:
-        img_control = ft.Container(ft.Text("No image found"), alignment=ft.Alignment(0, 0), height=180)
+        default_avatar = avatars_dir / "avatar_default.png"
+        print(f"[DEBUG] Looking for avatar at: {default_avatar}")
+        print(f"[DEBUG] File exists: {default_avatar.exists()}")
+        
+        if default_avatar.exists():
+            # Read file as bytes and encode to base64
+            with open(default_avatar, "rb") as f:
+                image_data = f.read()
+            
+            # Create base64 data URI
+            b64_string = base64.b64encode(image_data).decode('ascii')
+            data_uri = f"data:image/png;base64,{b64_string}"
+            
+            print(f"[DEBUG] Image size: {len(image_data)} bytes, base64: {len(b64_string)} chars")
+            
+            img_control = ft.Image(src=data_uri, width=770, height=150)
+            avatar_status.value = f"Avatar: {default_avatar.name}"
+            print("[OK] Avatar loaded as base64 data URI")
+        else:
+            # No default avatar found
+            print(f"[WARNING] Avatar file not found at {default_avatar}")
+            img_control = ft.Container(
+                content=ft.Column([
+                    ft.Icon(ft.Icons.PERSON, size=64, color=ft.Colors.OUTLINE),
+                    ft.Text("Avatar non trovato", size=11)
+                ], alignment=ft.MainAxisAlignment.CENTER, spacing=8),
+                alignment=ft.Alignment(0, 0),
+                height=150,
+                width=770,
+            )
+    except Exception as ex:
+        # Error loading avatar
+        print(f"[ERROR] Avatar exception: {ex}")
+        import traceback
+        traceback.print_exc()
+        img_control = ft.Container(
+            content=ft.Text(f"Errore caricamento avatar", size=12),
+            alignment=ft.Alignment(0, 0),
+            height=150,
+            width=770,
+        )
 
     # Add FilePicker and a button to change the image; save copies to img/avatars
     def on_pick_result(e):
+        nonlocal img_control
         try:
             if not getattr(e, "files", None):
                 return
@@ -687,15 +748,43 @@ def main(page: ft.Page):
                 if data_bytes:
                     avatars_dir = Path(__file__).parent / "img" / "avatars"
                     avatars_dir.mkdir(parents=True, exist_ok=True)
-                    dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
-                    with open(dest, "wb") as f:
+                    
+                    # Write to temporary file first
+                    import tempfile
+                    temp_path = Path(tempfile.mktemp(suffix=".tmp"))
+                    with open(temp_path, "wb") as f:
                         f.write(data_bytes)
-                    img_uri = dest.resolve().as_uri()
-                    img_control.src = img_uri
-                    data["avatar_path"] = str(dest)
-                    schedule_save()
+                    
+                    dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
+                    
+                    # Validate and convert avatar
+                    success, message = validate_and_convert_avatar(temp_path, dest)
+                    temp_path.unlink(missing_ok=True)
+                    
+                    if not success:
+                        page.snack_bar = ft.SnackBar(ft.Text(message))
+                        page.snack_bar.open = True
+                        page.update()
+                        return
+                    
+                    # Load as base64 data URI
                     try:
-                        avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
+                        with open(dest, "rb") as f:
+                            b = f.read()
+                        b64 = base64.b64encode(b).decode("ascii")
+                        data_uri = f"data:image/png;base64,{b64}"
+                        new_img = ft.Image(src=data_uri, width=770, height=150)
+                        new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
+                        image_inner.controls[0] = new_container
+                        img_control = new_container
+                        image_inner.update()
+                    except Exception:
+                        pass
+                    dm.data["avatar_path"] = str(dest)
+                    dm.do_save()  # Use immediate save instead of scheduled save
+                    reload_avatar()  # Force UI refresh after save
+                    try:
+                        avatar_status.value = message
                         avatar_status.update()
                     except Exception:
                         pass
@@ -712,134 +801,44 @@ def main(page: ft.Page):
             avatars_dir = Path(__file__).parent / "img" / "avatars"
             avatars_dir.mkdir(parents=True, exist_ok=True)
             dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
-            if ext in (".png", ".jpg", ".jpeg"):
-                try:
-                    import shutil
-                    shutil.copy(src_path, dest)
-                    # display by embedding image as base64 data URI (avoids file:// issues)
-                    try:
-                        with open(dest, "rb") as f:
-                            b = f.read()
-                        b64 = base64.b64encode(b).decode("ascii")
-                        data_uri = f"data:image/png;base64,{b64}"
-                        new_img = ft.Image(src=data_uri, width=650, height=180)
-                        try:
-                            image_inner.controls[0] = new_img
-                            image_inner.update()
-                        except Exception:
-                            img_control = new_img
-                    except Exception:
-                        pass
-                    data["avatar_path"] = str(dest)
-                    schedule_save()
-                    page.update()
-                    return
-                except Exception:
-                    pass
-
-            # Try to convert with Pillow if available
-            try:
-                from PIL import Image
-
-                im = Image.open(src_path).convert("RGBA")
-                im.save(dest, format="PNG")
+            
+            # Validate and convert avatar (handles all formats)
+            success, message = validate_and_convert_avatar(src_path, dest)
+            if success:
+                # display by embedding image as base64 data URI (avoids file:// issues)
                 try:
                     with open(dest, "rb") as f:
                         b = f.read()
                     b64 = base64.b64encode(b).decode("ascii")
                     data_uri = f"data:image/png;base64,{b64}"
-                    new_img = ft.Image(src=data_uri, width=650, height=180)
-                    try:
-                        image_inner.controls[0] = new_img
-                        image_inner.update()
-                        try:
-                            avatar_status.value = f"Avatar caricato: {dest.name} ({dest.stat().st_size} bytes)"
-                            avatar_status.update()
-                        except Exception:
-                            pass
-                    except Exception:
-                        img_control = new_img
-                except Exception:
-                    pass
-                data["avatar_path"] = str(dest)
-                schedule_save()
-                page.update()
-                return
-            except Exception:
-                page.snack_bar = ft.SnackBar(
-                    ft.Text("Formato non supportato: usa PNG o JPG, o installa Pillow per la conversione")
-                )
-                page.snack_bar.open = True
-                page.update()
-        except Exception:
-            page.snack_bar = ft.SnackBar(ft.Text("Errore durante l'importazione dell'immagine"))
-            page.snack_bar.open = True
-            page.update()
-
-    def reload_avatar(e=None):
-        try:
-            avatars_dir = Path(__file__).parent / "img" / "avatars"
-            dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
-            if dest.exists():
-                try:
-                    with open(dest, "rb") as f:
-                        b = f.read()
-                    try:
-                        b64 = base64.b64encode(b).decode("ascii")
-                        data_uri = f"data:image/png;base64,{b64}"
-                        new_img = ft.Image(src=data_uri, width=650, height=180)
-                        new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0,0))
-                    except Exception:
-                        raise
+                    new_img = ft.Image(src=data_uri, width=770, height=150)
+                    new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
                     try:
                         image_inner.controls[0] = new_container
+                        img_control = new_container
                         image_inner.update()
                     except Exception:
-                        try:
-                            image_frame.content = new_container
-                            image_frame.update()
-                        except Exception:
-                            # final fallback: show a visible icon so user can see the area updated
-                            fb = ft.Container(
-                                content=ft.Column([
-                                    ft.Icon(ft.Icons.PERSON, size=96),
-                                    ft.Text("Avatar caricato (fallback)")
-                                ], alignment=ft.MainAxisAlignment.CENTER),
-                                alignment=ft.Alignment(0,0),
-                                height=180,
-                            )
-                            try:
-                                image_frame.content = fb
-                                image_frame.update()
-                            except Exception:
-                                img_control = new_container
-                    # show confirmation and update status text
-                    try:
-                        avatar_status.value = f"Avatar caricato: {dest.name} ({dest.stat().st_size} bytes)"
-                        avatar_status.update()
-                    except Exception:
-                        pass
-                    try:
-                        page.snack_bar = ft.SnackBar(ft.Text(f"Avatar caricato: {dest.name}"))
-                        page.snack_bar.open = True
-                    except Exception:
-                        pass
+                        img_control = new_container
+                except Exception:
+                    pass
+                dm.data["avatar_path"] = str(dest)
+                dm.do_save()  # Use immediate save instead of scheduled save
+                reload_avatar()  # Force UI refresh after save
+                try:
+                    avatar_status.value = message
+                    avatar_status.update()
                 except Exception:
                     pass
                 page.update()
+                return
             else:
-                # show visible fallback in UI
-                fb = ft.Container(content=ft.Text("Nessun avatar trovato in img/avatars"), alignment=ft.Alignment(0,0), height=180)
-                try:
-                    image_frame.content = fb
-                    image_frame.update()
-                except Exception:
-                    pass
-                page.snack_bar = ft.SnackBar(ft.Text("Nessun avatar trovato in img/avatars"))
+                # Validation failed
+                page.snack_bar = ft.SnackBar(ft.Text(message))
                 page.snack_bar.open = True
                 page.update()
+                return
         except Exception:
-            page.snack_bar = ft.SnackBar(ft.Text("Errore nel caricamento dell'avatar"))
+            page.snack_bar = ft.SnackBar(ft.Text("Errore durante l'importazione dell'immagine"))
             page.snack_bar.open = True
             page.update()
 
@@ -861,26 +860,32 @@ def main(page: ft.Page):
                     page.update()
                     return
                 dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
-                import shutil
-
-                shutil.copy(src_path, dest)
-                data["avatar_path"] = str(dest)
-                schedule_save()
-                try:
-                    avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
-                    avatar_status.update()
-                except Exception:
-                    pass
-                page.snack_bar = ft.SnackBar(ft.Text(f"Avatar salvato: {dest.name}"))
-                page.snack_bar.open = True
-                page.update()
+                
+                # Validate and convert avatar with size constraints
+                success, message = validate_and_convert_avatar(src_path, dest)
+                
+                if not success:
+                    page.snack_bar = ft.SnackBar(ft.Text(message))
+                    page.snack_bar.open = True
+                    page.update()
+                    return
+                
+                # Update data and save to database
+                dm.data["avatar_path"] = str(dest)
+                dm.do_save()
+                
+                # Close dialog
+                page.dialog.open = False
+                
+                # Reload avatar
                 reload_avatar()
-                # remove overlay modal
+                
                 try:
-                    page.overlay.remove(modal)
+                    page.snack_bar = ft.SnackBar(ft.Text(message))
+                    page.snack_bar.open = True
+                    page.update()
                 except Exception:
                     pass
-                page.update()
             except Exception as ex:
                 try:
                     page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
@@ -890,15 +895,14 @@ def main(page: ft.Page):
                     pass
 
         def close_modal(ev=None):
-            try:
-                page.overlay.remove(modal)
-                page.update()
-            except Exception as ex:
-                pass
+            page.dialog.open = False
+            page.update()
 
         def open_system_file_picker(ev=None):
             # open a native OS file dialog in a background thread, then copy+reload on the UI thread
             import threading
+            
+            selected_file = [None]  # Use list to share between threads
 
             def _pick():
                 try:
@@ -906,91 +910,95 @@ def main(page: ft.Page):
                     from tkinter import filedialog
                     root = tk.Tk()
                     root.withdraw()
-                    file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg")])
+                    # Ensure the dialog appears in front
+                    root.attributes("-topmost", True)
+                    root.update()
+                    file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg;*.webp;*.gif")])
                     root.destroy()
+                    if file_path:
+                        selected_file[0] = file_path
                 except Exception as ex:
-                    file_path = ""
-                if not file_path:
+                    print(f"[FILE_PICKER] Error: {ex}")
+                    import traceback
+                    traceback.print_exc()
+
+            # Run file picker and wait
+            picker_thread = threading.Thread(target=_pick, daemon=True)
+            picker_thread.start()
+            picker_thread.join(timeout=60)  # Wait up to 60 seconds
+            
+            if not selected_file[0]:
+                return
+                
+            # Now do UI updates in main thread
+            try:
+                src_path = Path(selected_file[0])
+                if not src_path.exists():
+                    page.snack_bar = ft.SnackBar(ft.Text("File non trovato"))
+                    page.snack_bar.open = True
+                    page.update()
                     return
-
-                def _do():
-                    try:
-                        src_path = Path(file_path)
-                        dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
-                        import shutil
-
-                        shutil.copy(src_path, dest)
-                        data["avatar_path"] = str(dest)
-                        schedule_save()
-                        try:
-                            avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
-                            avatar_status.update()
-                        except Exception:
-                            pass
-                        reload_avatar()
-                        try:
-                            page.snack_bar = ft.SnackBar(ft.Text(f"Avatar salvato: {dest.name}"))
-                            page.snack_bar.open = True
-                        except Exception:
-                            pass
-                        try:
-                            page.overlay.remove(modal)
-                        except Exception:
-                            pass
-                        page.update()
-                    except Exception as ex:
-                        try:
-                            page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
-                            page.snack_bar.open = True
-                            page.update()
-                        except Exception:
-                            pass
-
+                
+                dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
+                
+                # Validate and convert avatar with size constraints
+                success, message = validate_and_convert_avatar(src_path, dest)
+                
+                if not success:
+                    page.snack_bar = ft.SnackBar(ft.Text(message))
+                    page.snack_bar.open = True
+                    page.update()
+                    return
+                
+                # Update data and save to database
+                dm.data["avatar_path"] = str(dest)
+                dm.do_save()
+                
+                # Close dialog
+                page.dialog.open = False
+                
+                # Reload avatar
+                reload_avatar()
+                
                 try:
-                    page.call_later(_do)
-                except Exception:
-                    # fallback: run on main thread (may block UI)
-                    _do()
-
-            threading.Thread(target=_pick, daemon=True).start()
-
-        # Always use a non-modal overlay container — this is reliable across Flet builds
-        modal = ft.Container(
-            content=ft.Container(
-                content=ft.Column(
-                    [
-                        ft.Row([ft.Text("Cambia immagine", weight=ft.FontWeight.BOLD), ft.IconButton(ft.Icons.CLOSE, on_click=close_modal)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        ft.Text("Incolla qui il percorso completo di un file PNG/JPG presente sul tuo PC, oppure copia manualmente il file in:"),
-                        ft.Text(str(avatars_dir)),
-                        path_field,
-                        ft.Row([
-                            ft.Button("Usa questo file", on_click=use_path_click),
-                            ft.Button("Apri file di sistema", on_click=open_system_file_picker),
-                            ft.Button("Ricarica", on_click=lambda ev: reload_avatar(ev)),
-                            ft.Button("Chiudi", on_click=close_modal),
-                        ], spacing=12),
-                    ],
-                    spacing=12,
-                ),
-                padding=16,
-                width=620,
-                height=220,
-                bgcolor=ft.Colors.SURFACE,
-            ),
-            alignment=ft.Alignment(0, 0),
-            bgcolor=None,
-        )
-
-        # remove any existing modal and append this overlay
-        try:
-            for o in list(page.overlay):
-                try:
-                    page.overlay.remove(o)
+                    page.snack_bar = ft.SnackBar(ft.Text(message))
+                    page.snack_bar.open = True
+                    page.update()
                 except Exception:
                     pass
-        except Exception:
-            pass
-        page.overlay.append(modal)
+            except Exception as ex:
+                import traceback
+                traceback.print_exc()
+                try:
+                    page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
+                    page.snack_bar.open = True
+                    page.update()
+                except Exception:
+                    pass
+
+        # Use AlertDialog - appears correctly in front
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Cambia immagine", weight=ft.FontWeight.BOLD),
+            content=ft.Column(
+                [
+                    ft.Text("Incolla qui il percorso completo di un file PNG/JPG presente sul tuo PC, oppure copia manualmente il file in:", max_lines=2),
+                    ft.Text(str(avatars_dir), size=11, color=ft.Colors.GREY_400),
+                    path_field,
+                ],
+                spacing=12,
+                tight=True,
+            ),
+            actions=[
+                ft.TextButton("Usa questo file", on_click=use_path_click),
+                ft.TextButton("Apri file di sistema", on_click=open_system_file_picker),
+                ft.TextButton("Ricarica", on_click=lambda ev: reload_avatar(ev)),
+                ft.TextButton("Chiudi", on_click=close_modal),
+            ],
+        )
+
+        page.dialog = dialog
+        dialog.open = True
         page.update()
 
     def change_image_click(e):
@@ -1005,66 +1013,138 @@ def main(page: ft.Page):
                 pass
 
     def open_system_file_picker_global(ev=None):
-        import threading
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            # Ensure the dialog appears in front
+            root.attributes("-topmost", True)
+            root.update()
+            file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg")])
+            root.destroy()
+        except Exception:
+            file_path = ""
+        if not file_path:
+            return
 
-        def _pick():
-            try:
-                import tkinter as tk
-                from tkinter import filedialog
-                root = tk.Tk()
-                root.withdraw()
-                file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg")])
-                root.destroy()
-            except Exception:
-                file_path = ""
-            if not file_path:
+        try:
+            src_path = Path(file_path)
+            if not src_path.exists():
+                page.snack_bar = ft.SnackBar(ft.Text("File non trovato"))
+                page.snack_bar.open = True
+                page.update()
                 return
-
-            def _do():
-                try:
-                    src_path = Path(file_path)
-                    dest = Path(__file__).parent / "img" / "avatars" / f"avatar_{dm.current_character_id or 'default'}.png"
-                    import shutil
-                    shutil.copy(src_path, dest)
-                    data["avatar_path"] = str(dest)
-                    schedule_save()
-                    try:
-                        avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
-                        avatar_status.update()
-                    except Exception:
-                        pass
-                    try:
-                        page.snack_bar = ft.SnackBar(ft.Text(f"Avatar salvato: {dest.name}"))
-                        page.snack_bar.open = True
-                    except Exception:
-                        pass
-                    reload_avatar()
-                    try:
-                        for o in list(page.overlay):
-                            try:
-                                page.overlay.remove(o)
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    page.update()
-                except Exception as ex:
-                    try:
-                        page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
-                        page.snack_bar.open = True
-                        page.update()
-                    except Exception:
-                        pass
-
+            
+            dest = Path(__file__).parent / "img" / "avatars" / f"avatar_{dm.current_character_id or 'default'}.png"
+            
+            # Validate and convert avatar with size constraints
+            success, message = validate_and_convert_avatar(src_path, dest)
+            
+            if not success:
+                page.snack_bar = ft.SnackBar(ft.Text(message))
+                page.snack_bar.open = True
+                page.update()
+                return
+            
+            # Update data and save
+            dm.data["avatar_path"] = str(dest)
+            dm.schedule_save()
+            
             try:
-                page.call_later(_do)
+                avatar_status.value = message
+                avatar_status.update()
             except Exception:
-                _do()
-
-        threading.Thread(target=_pick, daemon=True).start()
+                pass
+            try:
+                page.snack_bar = ft.SnackBar(ft.Text(message))
+                page.snack_bar.open = True
+            except Exception:
+                pass
+            reload_avatar()
+            try:
+                for o in list(page.overlay):
+                    try:
+                        page.overlay.remove(o)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            page.update()
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            try:
+                page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
+                page.snack_bar.open = True
+                page.update()
+            except Exception:
+                pass
 
     # wire the main button to open the system picker — more reliable than modal buttons
     change_btn = ft.Button("Cambia immagine", on_click=open_system_file_picker_global)
+
+    def validate_and_convert_avatar(src_path: Path, dest_path: Path) -> tuple[bool, str]:
+        """
+        Validate and convert avatar image with size constraints.
+        Returns (success: bool, message: str)
+        
+        Constraints:
+        - Max file size: 5MB
+        - Max dimensions: 2048x2048 (auto-resize if larger)
+        - Always converts to PNG format
+        """
+        try:
+            from PIL import Image
+        except ImportError:
+            return False, "Pillow non installato. Esegui: pip install Pillow"
+        
+        try:
+            
+            # Check file size (max 5MB)
+            file_size = src_path.stat().st_size
+            max_size = 5 * 1024 * 1024  # 5MB
+            if file_size > max_size:
+                return False, f"File troppo grande ({file_size // 1024 // 1024}MB). Max 5MB"
+            
+            # Open and validate image
+            try:
+                img = Image.open(src_path)
+            except Exception as e:
+                return False, f"Formato immagine non valido: {e}"
+            
+            # Check and resize if needed
+            max_dimension = 2048
+            width, height = img.size
+            
+            needs_resize = width > max_dimension or height > max_dimension
+            if needs_resize:
+                # Calculate new size maintaining aspect ratio
+                ratio = min(max_dimension / width, max_dimension / height)
+                new_width = int(width * ratio)
+                new_height = int(height * ratio)
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                print(f"[AVATAR] Resized from {width}x{height} to {new_width}x{new_height}")
+            
+            # Convert to RGB/RGBA for PNG (handles WebP, JPEG, etc.)
+            if img.mode not in ('RGB', 'RGBA'):
+                img = img.convert('RGBA')
+            
+            # Save as PNG
+            img.save(dest_path, 'PNG', optimize=True)
+            
+            final_size = dest_path.stat().st_size
+            msg = f"Avatar salvato: {width}x{height}px"
+            if needs_resize:
+                msg += f" (ridimensionato da {width}x{height})"
+            msg += f", {final_size // 1024}KB"
+            
+            return True, msg
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, f"Errore conversione: {e}"
 
     image_inner = ft.Column(
         [img_control, ft.Row([change_btn], alignment=ft.MainAxisAlignment.END), avatar_status],
@@ -1077,8 +1157,80 @@ def main(page: ft.Page):
         border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-        width=650,
+        width=770,
     )
+
+    def reload_avatar(e=None):
+        """Reload avatar image from disk using base64 data URI."""
+        nonlocal img_control
+        try:
+            avatars_dir = Path(__file__).parent / "img" / "avatars"
+            dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
+            print(f"[RELOAD_AVATAR] Looking for: {dest}")
+            print(f"[RELOAD_AVATAR] Character ID: {dm.current_character_id}")
+            print(f"[RELOAD_AVATAR] File exists: {dest.exists()}")
+            
+            # Fallback to avatar_default.png if character-specific avatar doesn't exist
+            if not dest.exists():
+                fallback_dest = avatars_dir / "avatar_default.png"
+                if fallback_dest.exists():
+                    dest = fallback_dest
+                    print(f"[RELOAD_AVATAR] Using fallback: {dest}")
+            
+            if dest.exists():
+                try:
+                    # Read file and encode to base64 (same as initial load)
+                    with open(dest, "rb") as f:
+                        image_data = f.read()
+                    b64_string = base64.b64encode(image_data).decode('ascii')
+                    data_uri = f"data:image/png;base64,{b64_string}"
+                    
+                    new_img = ft.Image(src=data_uri, width=770, height=150)
+                    new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0,0))
+                    
+                    # Update only the image control in image_inner
+                    image_inner.controls[0] = new_container
+                    img_control = new_container
+                    image_inner.update()
+                    image_frame.update()
+                    print(f"[RELOAD_AVATAR] Successfully updated with base64 data URI")
+                    
+                    # show confirmation and update status text
+                    try:
+                        avatar_status.value = f"Avatar caricato: {dest.name}"
+                        avatar_status.update()
+                    except Exception:
+                        pass
+                    try:
+                        page.snack_bar = ft.SnackBar(ft.Text(f"Avatar caricato: {dest.name}"))
+                        page.snack_bar.open = True
+                    except Exception:
+                        pass
+                except Exception as ex:
+                    print(f"[RELOAD_AVATAR] Error: {ex}")
+                    import traceback
+                    traceback.print_exc()
+                page.update()
+            else:
+                # show visible fallback in UI
+                print(f"[RELOAD_AVATAR] Avatar file NOT found at {dest}")
+                fb = ft.Container(content=ft.Text("Nessun avatar trovato in img/avatars"), alignment=ft.Alignment(0,0), height=150)
+                try:
+                    image_inner.controls[0] = fb
+                    image_inner.update()
+                    image_frame.update()
+                except Exception:
+                    pass
+                page.snack_bar = ft.SnackBar(ft.Text("Nessun avatar trovato in img/avatars"))
+                page.snack_bar.open = True
+                page.update()
+        except Exception as ex:
+            print(f"[RELOAD_AVATAR] Exception: {ex}")
+            import traceback
+            traceback.print_exc()
+            page.snack_bar = ft.SnackBar(ft.Text("Errore nel caricamento dell'avatar"))
+            page.snack_bar.open = True
+            page.update()
 
     money_card = ft.Container(
         content=ft.Column(
@@ -1091,7 +1243,7 @@ def main(page: ft.Page):
         padding=16,
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
-        width=650,
+        width=770,
     )
 
     inventory_card = ft.Container(
@@ -1208,13 +1360,17 @@ def main(page: ft.Page):
         expand=True,
     )
 
+    # Left column containing header, image, and money - needs reference for avatar updates
+    left_column = ft.Column([header_card, image_frame, money_card], spacing=16, width=770, tight=True)
+    
     scheda_view = ft.Row(
         [
-            ft.Column([header_card, image_frame, money_card], spacing=16, width=650),
-            ft.Column([inventory_card], spacing=16, expand=True),
+            left_column,
+            ft.Column([inventory_card], spacing=16, expand=True, tight=False),
         ],
         spacing=16,
         expand=True,
+        vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         visible=True,
     )
 
@@ -1303,6 +1459,23 @@ def main(page: ft.Page):
     item_effect_edit = ft.TextField(label="Effetto", multiline=True, min_lines=2, max_lines=3)
     editing_item_id = None
 
+    def on_item_form_change(e=None):
+        if editing_item_id is None:
+            return
+        refresh_items_library()
+        page.update()
+
+    item_name_edit.on_change = on_item_form_change
+    item_description_edit.on_change = on_item_form_change
+    item_effect_edit.on_change = on_item_form_change
+
+    def on_item_category_change(e=None):
+        update_icon_preview(e)
+        on_item_form_change(e)
+
+    item_category_edit.on_select = on_item_category_change
+    item_category_edit.on_blur = on_item_category_change
+
     items_card = ft.Container(
         content=ft.Column(
             [
@@ -1345,7 +1518,17 @@ def main(page: ft.Page):
             ]
         
         for item in items:
-            icon = CATEGORY_ICONS.get(item["category"], ft.Icons.HELP_OUTLINE)
+            display_name = item.get("name") or ""
+            display_desc = item.get("description") or ""
+            display_effect = item.get("effect") or ""
+            display_category = item.get("category") or CATEGORIES[0]
+            if editing_item_id == item.get("id"):
+                display_name = (item_name_edit.value or display_name).strip()
+                display_desc = item_description_edit.value or ""
+                display_effect = item_effect_edit.value or ""
+                display_category = item_category_edit.value or display_category
+
+            icon = CATEGORY_ICONS.get(display_category, ft.Icons.HELP_OUTLINE)
             
             # Conte quanti di questo item abbiamo nell'inventario
             item_count = 0
@@ -1380,19 +1563,24 @@ def main(page: ft.Page):
                 ft.Container(
                     content=ft.Row(
                         [
-                            ft.Icon(icon, size=32, color=ft.Colors.PRIMARY),
+                            ft.Icon(
+                                icon,
+                                size=32,
+                                color=ft.Colors.PRIMARY,
+                                tooltip=f"Categoria: {display_category}",
+                            ),
                             ft.Column(
                                 [
                                     ft.Row(
                                         [
-                                            ft.Text(item["name"], size=14, weight=ft.FontWeight.BOLD),
+                                            ft.Text(display_name, size=14, weight=ft.FontWeight.BOLD),
                                             counter_badge,
                                         ],
                                         spacing=8,
                                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                     ),
-                                    ft.Text(item["category"], size=11, color=ft.Colors.ON_SURFACE_VARIANT),
-                                    ft.Text(item["description"], size=11, max_lines=1) if item["description"] else None,
+                                    ft.Text(f"Descrizione: {display_desc}", size=11, max_lines=2) if display_desc else ft.Text("Descrizione: ", size=11),
+                                    ft.Text(f"Effetto: {display_effect}", size=11, max_lines=1) if display_effect else None,
                                 ],
                                 spacing=2,
                                 expand=True,
@@ -1500,7 +1688,7 @@ def main(page: ft.Page):
         padding=16,
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER,
-        width=650,
+        width=770,
     )
 
     
