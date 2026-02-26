@@ -763,16 +763,25 @@ def main(page: ft.Page):
     )
 
     def update_icon_preview(e=None):
-        cat = (e.control.value if e and hasattr(e, "control") else item_category_edit.value) or CATEGORIES[0]
-        item_icon_preview.name = CATEGORY_ICONS.get(cat, ft.Icons.HELP_OUTLINE)
+        cat = None
+        if e is not None:
+            if hasattr(e, "control") and getattr(e.control, "value", None):
+                cat = e.control.value
+            elif hasattr(e, "data") and e.data:
+                cat = e.data
+        if not cat:
+            cat = item_category_edit.value or CATEGORIES[0]
+        new_icon = CATEGORY_ICONS.get(cat, ft.Icons.HELP_OUTLINE)
+        item_icon_container.content = ft.Icon(new_icon, size=64, color=ft.Colors.PRIMARY)
         item_icon_container.update()
+        page.update()
 
     item_category_edit = ft.Dropdown(
         label="Categoria",
         options=[ft.dropdown.Option(c) for c in CATEGORIES],
         value=CATEGORIES[0],
     )
-    item_category_edit.on_change = update_icon_preview
+    item_category_edit.on_select = update_icon_preview
     item_category_edit.on_blur = update_icon_preview
 
     item_description_edit = ft.TextField(label="Descrizione", multiline=True, min_lines=2, max_lines=3)
