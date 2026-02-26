@@ -873,8 +873,9 @@ def main(page: ft.Page):
         path_field = ft.TextField(label="Percorso locale del file immagine", width=450)
 
         def use_path_click(ev):
-            src = path_field.value or ""
+            print("use_path_click invoked")
             try:
+                src = path_field.value or ""
                 src_path = Path(src)
                 if not src_path.exists():
                     page.snack_bar = ft.SnackBar(ft.Text("File non trovato: inserisci un percorso valido"))
@@ -903,6 +904,7 @@ def main(page: ft.Page):
                     pass
                 page.update()
             except Exception as ex:
+                print("use_path_click exception:", ex)
                 try:
                     page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
                     page.snack_bar.open = True
@@ -911,13 +913,75 @@ def main(page: ft.Page):
                     pass
 
         def close_modal(ev=None):
+            print("close_modal invoked")
             try:
                 page.overlay.remove(modal)
                 page.update()
-            except Exception:
+            except Exception as ex:
+                print("close_modal exception:", ex)
                 pass
 
-        # build a non-modal overlay container so it's always visible
+        def open_system_file_picker(ev=None):
+            # open a native OS file dialog in a background thread, then copy+reload on the UI thread
+            import threading
+
+            def _pick():
+                try:
+                    import tkinter as tk
+                    from tkinter import filedialog
+                    root = tk.Tk()
+                    root.withdraw()
+                    file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg")])
+                    root.destroy()
+                except Exception as ex:
+                    file_path = ""
+                print("_pick returned file_path:", file_path)
+                if not file_path:
+                    return
+
+                def _do():
+                    print("_do running copy for:", file_path)
+                    try:
+                        src_path = Path(file_path)
+                        dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
+                        import shutil
+
+                        shutil.copy(src_path, dest)
+                        data["avatar_path"] = str(dest)
+                        schedule_save()
+                        try:
+                            avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
+                            avatar_status.update()
+                        except Exception:
+                            pass
+                        reload_avatar()
+                        try:
+                            page.snack_bar = ft.SnackBar(ft.Text(f"Avatar salvato: {dest.name}"))
+                            page.snack_bar.open = True
+                        except Exception:
+                            pass
+                        try:
+                            page.overlay.remove(modal)
+                        except Exception:
+                            pass
+                        page.update()
+                    except Exception as ex:
+                        try:
+                            page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
+                            page.snack_bar.open = True
+                            page.update()
+                        except Exception:
+                            pass
+
+                try:
+                    page.call_later(_do)
+                except Exception:
+                    # fallback: run on main thread (may block UI)
+                    _do()
+
+            threading.Thread(target=_pick, daemon=True).start()
+
+        # Always use a non-modal overlay container — this is reliable across Flet builds
         modal = ft.Container(
             content=ft.Container(
                 content=ft.Column(
@@ -927,9 +991,10 @@ def main(page: ft.Page):
                         ft.Text(str(avatars_dir)),
                         path_field,
                         ft.Row([
-                            ft.ElevatedButton("Usa questo file", on_click=use_path_click),
-                            ft.ElevatedButton("Ricarica", on_click=lambda ev: reload_avatar(ev)),
-                            ft.ElevatedButton("Chiudi", on_click=close_modal),
+                            ft.Button("Usa questo file", on_click=use_path_click),
+                            ft.Button("Apri file di sistema", on_click=open_system_file_picker),
+                            ft.Button("Ricarica", on_click=lambda ev: reload_avatar(ev)),
+                            ft.Button("Chiudi", on_click=close_modal),
                         ], spacing=12),
                     ],
                     spacing=12,
@@ -945,7 +1010,6 @@ def main(page: ft.Page):
 
         # remove any existing modal and append this overlay
         try:
-            # remove last overlay if it's our modal-like container (best-effort)
             for o in list(page.overlay):
                 try:
                     page.overlay.remove(o)
@@ -955,6 +1019,7 @@ def main(page: ft.Page):
             pass
         page.overlay.append(modal)
         page.update()
+        print("open_manual_dialog: overlay appended to page.overlay")
 
     def change_image_click(e):
         try:
@@ -972,7 +1037,67 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
-    change_btn = ft.Button("Cambia immagine", on_click=change_image_click)
+        def open_system_file_picker_global(ev=None):
+            import threading
+
+            def _pick():
+                try:
+                    import tkinter as tk
+                    from tkinter import filedialog
+                    root = tk.Tk()
+                    root.withdraw()
+                    file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg")])
+                    root.destroy()
+                except Exception:
+                    file_path = ""
+                if not file_path:
+                    return
+
+                def _do():
+                    try:
+                        src_path = Path(file_path)
+                        dest = Path(__file__).parent / "img" / "avatars" / f"avatar_{current_character_id or 'default'}.png"
+                        import shutil
+                        shutil.copy(src_path, dest)
+                        data["avatar_path"] = str(dest)
+                        schedule_save()
+                        try:
+                            avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
+                            avatar_status.update()
+                        except Exception:
+                            pass
+                        try:
+                            page.snack_bar = ft.SnackBar(ft.Text(f"Avatar salvato: {dest.name}"))
+                            page.snack_bar.open = True
+                        except Exception:
+                            pass
+                        reload_avatar()
+                        try:
+                            for o in list(page.overlay):
+                                try:
+                                    page.overlay.remove(o)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        page.update()
+                    except Exception as ex:
+                        try:
+                            page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
+                            page.snack_bar.open = True
+                            page.update()
+                        except Exception:
+                            pass
+
+                try:
+                    page.call_later(_do)
+                except Exception:
+                    _do()
+
+            threading.Thread(target=_pick, daemon=True).start()
+
+        # wire the main button to open the system picker — more reliable than modal buttons
+        change_btn = ft.Button("Cambia immagine", on_click=open_system_file_picker_global)
 
     image_inner = ft.Column(
         [img_control, ft.Row([change_btn], alignment=ft.MainAxisAlignment.END), avatar_status],
