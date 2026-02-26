@@ -351,7 +351,7 @@ def main(page: ft.Page):
                 icon = CATEGORY_ICONS.get(item_cat, ft.Icons.HELP_OUTLINE)
             
             item_qty = it.get("qty") or 1
-            qty = ft.TextField(value=str(item_qty), label="Qtà", width=70, text_align=ft.TextAlign.CENTER, dense=True)
+            qty = ft.TextField(value=str(item_qty), width=70, text_align=ft.TextAlign.CENTER, dense=True)
 
             def on_qty_change(e, idx=i):
                 new_qty = max(1, to_int(e.control.value))
@@ -386,8 +386,22 @@ def main(page: ft.Page):
                 ft.Container(
                     content=ft.Column(
                         [
-                            ft.Icon(icon, size=48, color=ft.Colors.PRIMARY),
+                            ft.Row(
+                                [
+                                    ft.IconButton(
+                                        ft.Icons.CLOSE,
+                                        on_click=on_delete,
+                                        icon_size=12,
+                                        icon_color=ft.Colors.ERROR,
+                                        tooltip="Elimina",
+                                        margin=ft.margin.only(right=2, top=2),
+                                    ),
+                                ],
+                                alignment=ft.MainAxisAlignment.END,
+                            ),
+                            ft.Icon(icon, size=40, color=ft.Colors.PRIMARY),
                             ft.Text(item_name, size=14, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, max_lines=2),
+                            ft.Container(height=4),
                             ft.Row(
                                 [
                                     ft.IconButton(ft.Icons.REMOVE, on_click=on_dec, icon_size=16),
@@ -397,17 +411,11 @@ def main(page: ft.Page):
                                 alignment=ft.MainAxisAlignment.CENTER,
                                 spacing=4,
                             ),
-                            ft.IconButton(
-                                ft.Icons.DELETE_OUTLINE,
-                                on_click=on_delete,
-                                icon_color=ft.Colors.ERROR,
-                                tooltip="Elimina",
-                            ),
                         ],
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=8,
+                        spacing=6,
                     ),
-                    padding=12,
+                    padding=ft.padding.only(left=8, top=0, right=0, bottom=10),
                     border_radius=12,
                     bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
                     border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
@@ -467,18 +475,6 @@ def main(page: ft.Page):
         # Switch to Item tab to create a new item
         set_view("items")
 
-    def add_qualita(e):
-        data.setdefault("qualita", []).append("Nuova qualità")
-        persist()
-        refresh_qualita()
-        page.update()
-
-    def add_imparato(e):
-        data.setdefault("imparato", []).append("Nuova conoscenza")
-        persist()
-        refresh_imparato()
-        page.update()
-
     def import_from_pdf(e=None):
         if current_character_id is None:
             page.snack_bar = ft.SnackBar(ft.Text("Seleziona o crea un personaggio prima di importare"))
@@ -519,6 +515,18 @@ def main(page: ft.Page):
 
     refresh_inventory()
 
+    def add_qualita(e):
+        data.setdefault("qualita", []).append("Nuova qualità")
+        persist()
+        refresh_qualita()
+        page.update()
+
+    def add_imparato(e):
+        data.setdefault("imparato", []).append("Nuova conoscenza")
+        persist()
+        refresh_imparato()
+        page.update()
+
     def apply_data_to_fields():
         nome.value = data.get("nome", "")
         motivazione.value = data.get("motivazione", "")
@@ -539,13 +547,6 @@ def main(page: ft.Page):
         data = load_character(character_id)
         data["money"] = normalize_money(data.get("money", {}))
         data.setdefault("qualita", [])
-        data.setdefault("imparato", [])
-        data["inventario"] = normalize_inventory_items(data.get("inventario", []))
-        if (not data.get("inventario")) and data.get("inventario_raw"):
-            data["inventario"] = normalize_inventory_items(
-                split_inventory_raw(data.get("inventario_raw", ""))
-            )
-            save_character(character_id, data)
         apply_data_to_fields()
         selector_view.visible = False
         editor_view.visible = True
