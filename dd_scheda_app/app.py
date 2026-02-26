@@ -42,6 +42,49 @@ def main(page: ft.Page):
     theme_mode_setting = (settings.get("theme_mode") or "dark").lower()
     page.theme_mode = ft.ThemeMode.DARK if theme_mode_setting == "dark" else ft.ThemeMode.LIGHT
 
+    # Application state
+    current_character_id = None
+    data = {
+        "inventario": [],
+        "money": {"corone": 0, "scellini": 0, "rame": 0},
+        "qualita": [],
+        "imparato": [],
+        "inventario_raw": "",
+        "appunti": "",
+        "xp_raw": "",
+    }
+    save_timer_holder = {"timer": None}
+
+    def do_save():
+        if current_character_id is None:
+            return
+        try:
+            save_character(current_character_id, data)
+        except Exception:
+            pass
+
+    def schedule_save():
+        # debounce saves using a Timer stored in save_timer_holder
+        try:
+            if save_timer_holder.get("timer"):
+                try:
+                    save_timer_holder["timer"].cancel()
+                except Exception:
+                    pass
+            t = threading.Timer(0.5, do_save)
+            t.daemon = True
+            save_timer_holder["timer"] = t
+            t.start()
+        except Exception:
+            # fallback: immediate save
+            do_save()
+
+    # Basic UI fields that some handlers expect
+    nome = ft.TextField(label="Nome", value=data.get("nome", ""), expand=True)
+    motivazione = ft.TextField(label="Motivazione", value=data.get("motivazione", ""), expand=True)
+    xp = ft.TextField(label="XP", value=data.get("xp_raw", ""), width=100)
+    xp_block = ft.Row([xp], spacing=6)
+
     def toggle_theme(e):
         page.theme_mode = (
             ft.ThemeMode.DARK if page.theme_mode == ft.ThemeMode.LIGHT else ft.ThemeMode.LIGHT
@@ -59,57 +102,6 @@ def main(page: ft.Page):
         on_click=toggle_theme,
     )
 
-    def save_now(e=None):
-        if current_character_id is None:
-            page.snack_bar = ft.SnackBar(ft.Text("Seleziona un personaggio prima di salvare"))
-            page.snack_bar.open = True
-            page.update()
-            return
-        persist()
-        page.snack_bar = ft.SnackBar(ft.Text("Salvato nel database ✅"))
-        page.snack_bar.open = True
-        page.update()
-
-    save_button = ft.IconButton(
-        icon=ft.Icons.SAVE,
-        tooltip="Salva su database",
-        on_click=save_now,
-    )
-
-    page.appbar = ft.AppBar(
-        title=ft.Text("Scheda del Personaggio"),
-        bgcolor=ft.Colors.PRIMARY_CONTAINER,
-        center_title=False,
-        actions=[save_button, theme_toggle],
-    )
-
-    current_character_id: int | None = None
-    data: dict = {}
-
-    nome = ft.TextField(
-        label="Nome",
-        value=data.get("nome", ""),
-        prefix_icon=ft.Icons.PERSON,
-        expand=True,
-    )
-    motivazione = ft.TextField(
-        label="Motivazione",
-        value=data.get("motivazione", ""),
-        prefix_icon=ft.Icons.MAP,
-        multiline=True,
-        min_lines=2,
-        max_lines=4,
-        expand=True,
-    )
-    xp = ft.TextField(
-        value=data.get("xp_raw", ""),
-        prefix_icon=ft.Icons.STAR,
-        bgcolor=ft.Colors.TRANSPARENT,
-        border_color=ft.Colors.OUTLINE_VARIANT,
-        read_only=True,
-        text_size=14,
-        expand=True,
-    )
     appunti = ft.TextField(
         label="Appunti",
         value=data.get("appunti", ""),
@@ -237,64 +229,6 @@ def main(page: ft.Page):
         data["xp_raw"] = xp.value
         update_xp_background()
         persist()
-        update_xp_background()
-        xp_container.update()
-        xp_progress.update()
-
-    def on_xp_dec(e):
-        set_xp_percent(get_xp_percent_int() - 1)
-
-    def on_xp_inc(e):
-        set_xp_percent(get_xp_percent_int() + 1)
-
-    xp_controls = ft.Column(
-        [
-            ft.IconButton(ft.Icons.ADD, icon_size=16, on_click=on_xp_inc),
-            ft.IconButton(ft.Icons.REMOVE, icon_size=16, on_click=on_xp_dec),
-        ],
-        spacing=0,
-        alignment=ft.MainAxisAlignment.CENTER,
-        width=32,
-    )
-
-    xp_block = ft.Column(
-        [
-            ft.Text("XP", size=12, color=ft.Colors.OUTLINE),
-            ft.Row([xp_container, xp_controls], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            xp_progress_wrap,
-        ],
-        spacing=0,
-        expand=True,
-    )
-
-    def on_appunti_change(e):
-        data["appunti"] = appunti.value
-        persist()
-
-    def on_money_change(e):
-        data["money"]["corone"] = to_int(corone.value)
-        data["money"]["scellini"] = to_int(scellini.value)
-        data["money"]["rame"] = to_int(rame.value)
-        persist()
-
-    nome.on_change = on_nome_change
-    motivazione.on_change = on_motivazione_change
-    appunti.on_change = on_appunti_change
-    corone.on_change = on_money_change
-    scellini.on_change = on_money_change
-    rame.on_change = on_money_change
-
-    save_timer: threading.Timer | None = None
-
-    def schedule_save():
-        nonlocal save_timer
-        if current_character_id is None:
-            return
-        if save_timer is not None:
-            save_timer.cancel()
-
-        def do_save():
-            save_character(current_character_id, data)
 
         save_timer = threading.Timer(0.4, do_save)
         save_timer.daemon = True
@@ -314,138 +248,137 @@ def main(page: ft.Page):
 
     def refresh_inventory():
         inv_grid.controls.clear()
-        # Sort items by category
-        inventory = data.get("inventario", [])
-        sorted_inventory = sorted(
-            enumerate(inventory),
-            key=lambda x: (
-                CATEGORIES.index(
-                    get_item_by_id(x[1]["item_id"])["category"] if x[1].get("item_id") else x[1].get("category", DEFAULT_CATEGORY)
-                ) if (x[1].get("item_id") and get_item_by_id(x[1]["item_id"])) or x[1].get("category", DEFAULT_CATEGORY) in CATEGORIES else 999,
-                get_item_by_id(x[1]["item_id"])["name"] if x[1].get("item_id") and get_item_by_id(x[1]["item_id"]) else x[1].get("name", "")
-            )
-        )
-        
-        for original_idx, it in sorted_inventory:
-            i = original_idx
-            
-            # Check if it's a library item or legacy item
-            if "item_id" in it and it["item_id"]:
-                lib_item = get_item_by_id(it["item_id"])
-                if lib_item:
-                    item_name = lib_item["name"]
-                    item_cat = lib_item["category"]
-                    item_effect = lib_item["effect"]
-                    icon = CATEGORY_ICONS.get(item_cat, ft.Icons.HELP_OUTLINE)
-                else:
-                    # Item deleted from library
-                    item_name = "Item eliminato"
-                    item_cat = DEFAULT_CATEGORY
-                    item_effect = ""
-                    icon = ft.Icons.HELP_OUTLINE
+        inventory = data.get("inventario", []) or []
+
+        # Normalize items into dicts with name, qty, category and optional item_id
+        normalized = []
+        for it in inventory:
+            if isinstance(it, dict):
+                name = (it.get("name") or "").strip()
+                qty = int(it.get("qty") or it.get("quantity") or 1)
+                category = it.get("category") or DEFAULT_CATEGORY
+                item_id = it.get("item_id")
             else:
-                # Legacy item
-                item_name = (it.get("name") or "").strip()
-                item_cat = (it.get("category") or DEFAULT_CATEGORY).strip()
-                item_effect = ""
-                icon = CATEGORY_ICONS.get(item_cat, ft.Icons.HELP_OUTLINE)
-            
-            item_qty = it.get("qty") or 1
-            qty = ft.TextField(value=str(item_qty), width=70, text_align=ft.TextAlign.CENTER, dense=True)
+                name, qty = parse_inventory_item(str(it))
+                category = DEFAULT_CATEGORY
+                item_id = None
+            normalized.append({"name": name, "qty": max(1, qty), "category": category, "item_id": item_id})
 
-            def on_qty_change(e, idx=i):
-                new_qty = max(1, to_int(e.control.value))
-                qty.value = str(new_qty)
-                data["inventario"][idx]["qty"] = new_qty
-                persist()
-                page.update()
+        def sort_key(it):
+            cat = it.get("category") or DEFAULT_CATEGORY
+            try:
+                cat_idx = CATEGORIES.index(cat)
+            except ValueError:
+                cat_idx = 999
+            nm = it.get("name") or ""
+            return (cat_idx, nm.lower())
 
-            def on_dec(e, idx=i):
-                new_qty = max(1, to_int(qty.value) - 1)
-                qty.value = str(new_qty)
-                data["inventario"][idx]["qty"] = new_qty
-                persist()
-                page.update()
+        for idx, it in enumerate(sorted(normalized, key=sort_key)):
+            # Resolve library item if present
+            lib = None
+            if it.get("item_id"):
+                try:
+                    lib = get_item_by_id(it["item_id"]) or None
+                except Exception:
+                    lib = None
 
-            def on_inc(e, idx=i):
-                new_qty = max(1, to_int(qty.value) + 1)
-                qty.value = str(new_qty)
-                data["inventario"][idx]["qty"] = new_qty
-                persist()
-                page.update()
+            item_name = (lib.get("name") if lib else it.get("name")) or ""
+            item_effect = (lib.get("effect") if lib else None) or None
+            icon_name = (lib.get("category") if lib else it.get("category")) or DEFAULT_CATEGORY
+            icon = CATEGORY_ICONS.get(icon_name, ft.Icons.HELP_OUTLINE)
+            qty_val = int(it.get("qty") or 1)
 
-            def on_delete(e, idx=i):
-                data["inventario"].pop(idx)
+            qty_field = ft.TextField(value=str(qty_val), width=56, text_align=ft.TextAlign.CENTER)
+
+            def on_inc(e, i=idx):
+                try:
+                    data["inventario"][i]["qty"] = int(data["inventario"][i].get("qty", 1)) + 1
+                except Exception:
+                    # fallback: if raw string, parse and replace
+                    name, q = parse_inventory_item(str(data["inventario"][i]))
+                    data["inventario"][i] = {"name": name, "qty": q + 1, "category": DEFAULT_CATEGORY}
                 persist()
                 refresh_inventory()
                 page.update()
 
-            qty.on_change = on_qty_change
-
-            inv_grid.controls.append(
-                ft.Container(
-                    content=ft.Column(
-                        [
-                            ft.Row(
-                                [
-                                    ft.IconButton(
-                                        ft.Icons.CLOSE,
-                                        on_click=on_delete,
-                                        icon_size=12,
-                                        icon_color=ft.Colors.ERROR,
-                                        tooltip="Elimina",
-                                        margin=ft.margin.only(right=2, top=2),
-                                    ),
-                                ],
-                                alignment=ft.MainAxisAlignment.END,
-                            ),
-                            ft.Icon(icon, size=40, color=ft.Colors.PRIMARY),
-                            ft.Text(item_name, size=14, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, max_lines=2),
-                            ft.Container(height=4),
-                            ft.Row(
-                                [
-                                    ft.IconButton(ft.Icons.REMOVE, on_click=on_dec, icon_size=16),
-                                    qty,
-                                    ft.IconButton(ft.Icons.ADD, on_click=on_inc, icon_size=16),
-                                ],
-                                alignment=ft.MainAxisAlignment.CENTER,
-                                spacing=4,
-                            ),
-                        ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=6,
-                    ),
-                    padding=ft.padding.only(left=8, top=0, right=0, bottom=10),
-                    border_radius=12,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
-                    tooltip=item_effect if item_effect else None,
-                )
-            )
-
-    def refresh_qualita():
-        qualita_list.controls.clear()
-        for i, it in enumerate(data.get("qualita", [])):
-            txt = ft.TextField(value=it, expand=True)
-
-            def on_change(e, idx=i):
-                data["qualita"][idx] = e.control.value
+            def on_dec(e, i=idx):
+                try:
+                    current = int(data["inventario"][i].get("qty", 1))
+                    if current > 1:
+                        data["inventario"][i]["qty"] = current - 1
+                    else:
+                        data["inventario"].pop(i)
+                except Exception:
+                    # fallback: remove
+                    try:
+                        data["inventario"].pop(i)
+                    except Exception:
+                        pass
                 persist()
-
-            def on_delete(e, idx=i):
-                data["qualita"].pop(idx)
-                persist()
-                refresh_qualita()
+                refresh_inventory()
                 page.update()
 
-            txt.on_change = on_change
+            def on_delete(e, i=idx):
+                try:
+                    data["inventario"].pop(i)
+                except Exception:
+                    pass
+                persist()
+                refresh_inventory()
+                page.update()
 
-            qualita_list.controls.append(
-                ft.Row(
-                    [txt, ft.IconButton(ft.Icons.DELETE_OUTLINE, on_click=on_delete)],
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                )
+            qty_field.on_change = lambda e, i=idx: (
+                data["inventario"].__setitem__(i, {**(data.get("inventario")[i] if isinstance(data.get("inventario")[i], dict) else {}), "name": item_name, "qty": int(e.control.value or 1)}) or persist()
             )
+
+            card = ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Container(width=12),
+                        ft.Column(
+                            [
+                                ft.Container(expand=True),
+                                ft.Icon(icon, size=44, color=ft.Colors.PRIMARY),
+                                ft.Text(item_name, size=14, weight=ft.FontWeight.BOLD, max_lines=2),
+                                ft.Container(height=6),
+                                ft.Row(
+                                    [
+                                        ft.IconButton(ft.Icons.REMOVE, on_click=on_dec, icon_size=16),
+                                        qty_field,
+                                        ft.IconButton(ft.Icons.ADD, on_click=on_inc, icon_size=16),
+                                    ],
+                                    alignment=ft.MainAxisAlignment.CENTER,
+                                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                    spacing=6,
+                                ),
+                                ft.Container(expand=True),
+                            ],
+                            expand=True,
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=6,
+                        ),
+                        ft.Container(
+                            content=ft.IconButton(
+                                icon=ft.Icons.CLOSE,
+                                on_click=on_delete,
+                                icon_size=16,
+                                icon_color=ft.Colors.ERROR,
+                                tooltip="Elimina",
+                            ),
+                            width=28,
+                            alignment=ft.Alignment(1, -1),
+                        ),
+                    ],
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                ),
+                padding=ft.padding.only(left=8, top=4, right=4, bottom=10),
+                border_radius=12,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                tooltip=item_effect if item_effect else None,
+            )
+
+            inv_grid.controls.append(card)
 
     def refresh_imparato():
         imparato_list.controls.clear()
@@ -526,6 +459,33 @@ def main(page: ft.Page):
         persist()
         refresh_imparato()
         page.update()
+
+    def refresh_qualita():
+        qualita_list.controls.clear()
+        for i, it in enumerate(data.get("qualita", [])):
+            txt = ft.TextField(value=it, expand=True)
+
+            def on_change(e, idx=i):
+                data["qualita"][idx] = e.control.value
+                persist()
+
+            def on_delete(e, idx=i):
+                try:
+                    data["qualita"].pop(idx)
+                except Exception:
+                    pass
+                persist()
+                refresh_qualita()
+                page.update()
+
+            txt.on_change = on_change
+
+            qualita_list.controls.append(
+                ft.Row(
+                    [txt, ft.IconButton(ft.Icons.DELETE_OUTLINE, on_click=on_delete)],
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
+            )
 
     def apply_data_to_fields():
         nome.value = data.get("nome", "")

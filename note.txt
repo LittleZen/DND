@@ -1,0 +1,3 @@
+spostare nei settings, categorie ed icone
+creare icone fisiche nella cartella img/icons
+
