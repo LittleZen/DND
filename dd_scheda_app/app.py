@@ -1037,67 +1037,67 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
-        def open_system_file_picker_global(ev=None):
-            import threading
+    def open_system_file_picker_global(ev=None):
+        import threading
 
-            def _pick():
+        def _pick():
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg")])
+                root.destroy()
+            except Exception:
+                file_path = ""
+            if not file_path:
+                return
+
+            def _do():
                 try:
-                    import tkinter as tk
-                    from tkinter import filedialog
-                    root = tk.Tk()
-                    root.withdraw()
-                    file_path = filedialog.askopenfilename(filetypes=[("Images", "*.png;*.jpg;*.jpeg")])
-                    root.destroy()
-                except Exception:
-                    file_path = ""
-                if not file_path:
-                    return
-
-                def _do():
+                    src_path = Path(file_path)
+                    dest = Path(__file__).parent / "img" / "avatars" / f"avatar_{current_character_id or 'default'}.png"
+                    import shutil
+                    shutil.copy(src_path, dest)
+                    data["avatar_path"] = str(dest)
+                    schedule_save()
                     try:
-                        src_path = Path(file_path)
-                        dest = Path(__file__).parent / "img" / "avatars" / f"avatar_{current_character_id or 'default'}.png"
-                        import shutil
-                        shutil.copy(src_path, dest)
-                        data["avatar_path"] = str(dest)
-                        schedule_save()
-                        try:
-                            avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
-                            avatar_status.update()
-                        except Exception:
-                            pass
-                        try:
-                            page.snack_bar = ft.SnackBar(ft.Text(f"Avatar salvato: {dest.name}"))
-                            page.snack_bar.open = True
-                        except Exception:
-                            pass
-                        reload_avatar()
-                        try:
-                            for o in list(page.overlay):
-                                try:
-                                    page.overlay.remove(o)
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
+                        avatar_status.value = f"Avatar salvato: {dest.name} ({dest.stat().st_size} bytes)"
+                        avatar_status.update()
+                    except Exception:
+                        pass
+                    try:
+                        page.snack_bar = ft.SnackBar(ft.Text(f"Avatar salvato: {dest.name}"))
+                        page.snack_bar.open = True
+                    except Exception:
+                        pass
+                    reload_avatar()
+                    try:
+                        for o in list(page.overlay):
+                            try:
+                                page.overlay.remove(o)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    page.update()
+                except Exception as ex:
+                    try:
+                        page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
+                        page.snack_bar.open = True
                         page.update()
-                    except Exception as ex:
-                        try:
-                            page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
-                            page.snack_bar.open = True
-                            page.update()
-                        except Exception:
-                            pass
+                    except Exception:
+                        pass
 
-                try:
-                    page.call_later(_do)
-                except Exception:
-                    _do()
+            try:
+                page.call_later(_do)
+            except Exception:
+                _do()
 
-            threading.Thread(target=_pick, daemon=True).start()
+        threading.Thread(target=_pick, daemon=True).start()
 
-        # wire the main button to open the system picker — more reliable than modal buttons
-        change_btn = ft.Button("Cambia immagine", on_click=open_system_file_picker_global)
+    # wire the main button to open the system picker — more reliable than modal buttons
+    change_btn = ft.Button("Cambia immagine", on_click=open_system_file_picker_global)
 
     image_inner = ft.Column(
         [img_control, ft.Row([change_btn], alignment=ft.MainAxisAlignment.END), avatar_status],
