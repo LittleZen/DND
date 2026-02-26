@@ -8,16 +8,17 @@ sys.path.append(str(Path(__file__).parent))
 
 import flet as ft
 import base64
-from bank import normalize_money, to_int
-from inventory import (
+from .bank import normalize_money, to_int
+from .core import DataManager
+from .inventory import (
     DEFAULT_CATEGORY,
     normalize_inventory_items,
     parse_inventory_item,
     split_inventory_raw,
 )
-from pdf_import import read_pdf_fields
-from settings import load_settings, save_settings
-from storage import (
+from .pdf_import import read_pdf_fields
+from .settings import load_settings, save_settings
+from .storage import (
     add_item_to_library,
     create_character,
     delete_item_from_library,
@@ -45,48 +46,37 @@ def main(page: ft.Page):
 
     # (floating debug button removed) 
 
-    # Application state
-    current_character_id = None
-    data = {
-        "inventario": [],
-        "money": {"corone": 0, "scellini": 0, "rame": 0},
-        "qualita": [],
-        "imparato": [],
-        "inventario_raw": "",
-        "appunti": "",
-        "xp_raw": "",
-    }
-    save_timer_holder = {"timer": None}
+    # Application state - centralized data management
+    dm = DataManager()
 
-    def do_save():
-        if current_character_id is None:
-            return
-        try:
-            save_character(current_character_id, data)
-        except Exception as ex:
-            print(f"[SAVE ERROR] Failed to save: {ex}")
-            import traceback
-            traceback.print_exc()
-
+    # For backward compatibility with existing code
+    data = dm.data
+    
     def schedule_save():
-        # debounce saves using a Timer stored in save_timer_holder
-        try:
-            if save_timer_holder.get("timer"):
-                try:
-                    save_timer_holder["timer"].cancel()
-                except Exception:
-                    pass
-            t = threading.Timer(0.5, do_save)
-            t.daemon = True
-            save_timer_holder["timer"] = t
-            t.start()
-        except Exception:
-            # fallback: immediate save
-            do_save()
+        """Wrapper for dm.schedule_save() - maintains backward compatibility."""
+        dm.schedule_save()
+    
+    def do_save():
+        """Wrapper for dm.do_save() - maintains backward compatibility."""
+        dm.do_save()
+    
+    # Alias for current_character_id for backward compatibility  
+    class CharacterIDRef:
+        """Simple reference wrapper for current_character_id."""
+        def __init__(self, dm_instance):
+            self.dm = dm_instance
+        
+        def __eq__(self, other):
+            return self.dm.current_character_id == other
+        
+        def __repr__(self):
+            return str(self.dm.current_character_id)
+    
+    current_character_id_ref = CharacterIDRef(dm)
 
     # Basic UI fields that some handlers expect
-    nome = ft.TextField(label="Nome", value=data.get("nome", ""), expand=True)
-    motivazione = ft.TextField(label="Motivazione", value=data.get("motivazione", ""), expand=True)
+    nome = ft.TextField(label="Nome", value=dm.data.get("nome", ""), expand=True)
+    motivazione = ft.TextField(label="Motivazione", value=dm.data.get("motivazione", ""), expand=True)
 
     xp = ft.TextField(label="XP", value=data.get("xp_raw", ""), width=100)
 
@@ -185,11 +175,11 @@ def main(page: ft.Page):
 
     inv_grid = ft.GridView(
         expand=True,
-        runs_count=3,
-        max_extent=250,
+        runs_count=4,
+        max_extent=180,
         child_aspect_ratio=1.0,
-        spacing=12,
-        run_spacing=12,
+        spacing=10,
+        run_spacing=10,
         padding=10,
     )
     qualita_list = ft.ListView(expand=True, spacing=8, padding=10)
@@ -230,6 +220,9 @@ def main(page: ft.Page):
     def on_motivazione_change(e):
         data["motivazione"] = motivazione.value
         schedule_save()
+
+    nome.on_change = on_nome_change
+    motivazione.on_change = on_motivazione_change
 
     def parse_xp_percent(value: str) -> float:
         if not value:
@@ -332,7 +325,7 @@ def main(page: ft.Page):
             icon = CATEGORY_ICONS.get(icon_name, ft.Icons.HELP_OUTLINE)
             qty_val = int(it.get("qty") or 1)
 
-            qty_field = ft.TextField(value=str(qty_val), width=56, text_align=ft.TextAlign.CENTER)
+            qty_field = ft.TextField(value=str(qty_val), width=44, text_align=ft.TextAlign.CENTER, text_size=12)
 
             def on_inc(e, i=idx):
                 try:
@@ -382,23 +375,23 @@ def main(page: ft.Page):
                         ft.Column(
                             [
                                 ft.Container(expand=True),
-                                ft.Icon(icon, size=44, color=ft.Colors.PRIMARY),
-                                ft.Text(item_name, size=14, weight=ft.FontWeight.BOLD, max_lines=2, text_align=ft.TextAlign.CENTER),
-                                ft.Container(height=6),
+                                ft.Icon(icon, size=32, color=ft.Colors.PRIMARY),
+                                ft.Text(item_name, size=12, weight=ft.FontWeight.BOLD, max_lines=2, text_align=ft.TextAlign.CENTER),
+                                ft.Container(height=4),
                                 ft.Row(
                                     [
-                                        ft.IconButton(ft.Icons.REMOVE, on_click=on_dec, icon_size=16),
+                                        ft.IconButton(ft.Icons.REMOVE, on_click=on_dec, icon_size=14),
                                         qty_field,
-                                        ft.IconButton(ft.Icons.ADD, on_click=on_inc, icon_size=16),
+                                        ft.IconButton(ft.Icons.ADD, on_click=on_inc, icon_size=14),
                                     ],
                                     alignment=ft.MainAxisAlignment.CENTER,
                                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                                    spacing=6,
+                                    spacing=4,
                                 ),
                                 ft.Container(expand=True),
                             ],
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                            spacing=6,
+                            spacing=4,
                         ),
                         # X posizionata in alto a destra
                         ft.Container(
@@ -414,8 +407,8 @@ def main(page: ft.Page):
                         ),
                     ],
                 ),
-                padding=10,
-                border_radius=12,
+                padding=6,
+                border_radius=8,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
                 border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
                 tooltip=item_effect if item_effect else None,
@@ -452,7 +445,7 @@ def main(page: ft.Page):
         set_view("items")
 
     def import_from_pdf(e=None):
-        if current_character_id is None:
+        if dm.current_character_id is None:
             page.snack_bar = ft.SnackBar(ft.Text("Seleziona o crea un personaggio prima di importare"))
             page.snack_bar.open = True
             page.update()
@@ -574,11 +567,10 @@ def main(page: ft.Page):
         refresh_imparato()
 
     def load_character_by_id(character_id: int):
-        nonlocal current_character_id, data
-        current_character_id = character_id
-        data = load_character(character_id)
-        data["money"] = normalize_money(data.get("money", {}))
-        data.setdefault("qualita", [])
+        dm.set_character(character_id)
+        dm.data.update(load_character(character_id))
+        dm.data["money"] = normalize_money(dm.data.get("money", {}))
+        dm.data.setdefault("qualita", [])
         apply_data_to_fields()
         selector_view.visible = False
         editor_view.visible = True
@@ -695,7 +687,7 @@ def main(page: ft.Page):
                 if data_bytes:
                     avatars_dir = Path(__file__).parent / "img" / "avatars"
                     avatars_dir.mkdir(parents=True, exist_ok=True)
-                    dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
+                    dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
                     with open(dest, "wb") as f:
                         f.write(data_bytes)
                     img_uri = dest.resolve().as_uri()
@@ -719,7 +711,7 @@ def main(page: ft.Page):
             ext = src_path.suffix.lower()
             avatars_dir = Path(__file__).parent / "img" / "avatars"
             avatars_dir.mkdir(parents=True, exist_ok=True)
-            dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
+            dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
             if ext in (".png", ".jpg", ".jpeg"):
                 try:
                     import shutil
@@ -787,7 +779,7 @@ def main(page: ft.Page):
     def reload_avatar(e=None):
         try:
             avatars_dir = Path(__file__).parent / "img" / "avatars"
-            dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
+            dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
             if dest.exists():
                 try:
                     with open(dest, "rb") as f:
@@ -868,7 +860,7 @@ def main(page: ft.Page):
                     page.snack_bar.open = True
                     page.update()
                     return
-                dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
+                dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
                 import shutil
 
                 shutil.copy(src_path, dest)
@@ -924,7 +916,7 @@ def main(page: ft.Page):
                 def _do():
                     try:
                         src_path = Path(file_path)
-                        dest = avatars_dir / f"avatar_{current_character_id or 'default'}.png"
+                        dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
                         import shutil
 
                         shutil.copy(src_path, dest)
@@ -1031,7 +1023,7 @@ def main(page: ft.Page):
             def _do():
                 try:
                     src_path = Path(file_path)
-                    dest = Path(__file__).parent / "img" / "avatars" / f"avatar_{current_character_id or 'default'}.png"
+                    dest = Path(__file__).parent / "img" / "avatars" / f"avatar_{dm.current_character_id or 'default'}.png"
                     import shutil
                     shutil.copy(src_path, dest)
                     data["avatar_path"] = str(dest)
@@ -1362,7 +1354,7 @@ def main(page: ft.Page):
                     item_count += inv_item.get("qty", 1)
             
             def on_add_to_inventory(e, i=item):
-                if current_character_id is None:
+                if dm.current_character_id is None:
                     page.snack_bar = ft.SnackBar(ft.Text("Carica o crea un personaggio prima"))
                     page.snack_bar.open = True
                     page.update()
@@ -1464,7 +1456,7 @@ def main(page: ft.Page):
                 item_effect_edit.value or "",
             )
             # Add the item to the current character's inventory
-            if current_character_id is not None:
+            if dm.current_character_id is not None:
                 data["inventario"].append({"item_id": new_item_id, "qty": 1})
                 schedule_save()
                 refresh_inventory()
@@ -1634,7 +1626,3 @@ def main(page: ft.Page):
         reload_avatar()
     except Exception:
         pass
-
-
-# Flet 0.81: usa run() al posto di app()
-ft.run(main)

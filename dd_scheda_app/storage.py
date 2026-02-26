@@ -4,8 +4,8 @@ import json
 import sqlite3
 from pathlib import Path
 
-from bank import default_money, normalize_money
-from inventory import (
+from .bank import default_money, normalize_money
+from .inventory import (
     DEFAULT_CATEGORY,
     format_inventory_item,
     normalize_inventory_items,
