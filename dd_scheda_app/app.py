@@ -178,6 +178,43 @@ def main(page: ft.Page):
         on_change=on_money_change,
     )
 
+    def on_status_change(e):
+        data["status"]["adrenalina"] = adrenalina_switch.value
+        data["status"]["confusione"] = confusione_switch.value
+        data["status"]["svantaggio"] = svantaggio_switch.value
+        data["status"]["malus"] = malus.value
+        schedule_save()
+
+    adrenalina_switch = ft.Switch(
+        label="Adrenalina",
+        value=data.get("status", {}).get("adrenalina", False),
+        active_color=ft.Colors.RED_400,
+        on_change=on_status_change,
+        tooltip="Nella prossima prova estrai almeno 4 token",
+    )
+    confusione_switch = ft.Switch(
+        label="Confusione",
+        value=data.get("status", {}).get("confusione", False),
+        active_color=ft.Colors.ORANGE_400,
+        on_change=on_status_change,
+        tooltip="Nella prossima prova, per ogni token bianco che aggiungi al pool, devi pescare un token dal sacchetto e quello pescato sostituisce il bianco.",
+    )
+    svantaggio_switch = ft.Switch(
+        label="Svantaggio",
+        value=data.get("status", {}).get("svantaggio", False),
+        active_color=ft.Colors.BLUE_400,
+        on_change=on_status_change,
+        tooltip="1 token nero aggiuntivo, se lanci i dadi: lancia 2 volte e prendi il risultato MINORE",
+    )
+
+    malus = ft.TextField(
+        label="Malus",
+        value=data.get("status", {}).get("malus", ""),
+        expand=True,
+        tooltip="Inserisci il malus del tuo personaggio",
+        on_change=on_status_change,
+    )
+
     inv_grid = ft.GridView(
         expand=True,
         runs_count=4,
@@ -613,6 +650,12 @@ def main(page: ft.Page):
         corone.value = str(money.get("corone", 0))
         scellini.value = str(money.get("scellini", 0))
         rame.value = str(money.get("rame", 0))
+        # Update status switches
+        status = data.get("status", {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": ""})
+        adrenalina_switch.value = status.get("adrenalina", False)
+        confusione_switch.value = status.get("confusione", False)
+        svantaggio_switch.value = status.get("svantaggio", False)
+        malus.value = status.get("malus", "")
         update_xp_background()
         refresh_inventory()
         refresh_qualita()
@@ -623,6 +666,7 @@ def main(page: ft.Page):
         dm.data.update(load_character(character_id))
         dm.data["money"] = normalize_money(dm.data.get("money", {}))
         dm.data.setdefault("qualita", [])
+        dm.data.setdefault("status", {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": ""})
         apply_data_to_fields()
         selector_view.visible = False
         editor_view.visible = True
@@ -1265,6 +1309,21 @@ def main(page: ft.Page):
         width=770,
     )
 
+    status_card = ft.Container(
+        content=ft.Column(
+            [
+                ft.Text("Status Negativo", size=16, weight=ft.FontWeight.BOLD),
+                ft.Row([adrenalina_switch, confusione_switch, svantaggio_switch], spacing=20, wrap=True),
+                ft.Row([malus], spacing=12),
+            ],
+            spacing=8,
+        ),
+        padding=16,
+        border_radius=12,
+        bgcolor=ft.Colors.SURFACE_CONTAINER,
+        width=770,
+    )
+
     inventory_card = ft.Container(
         content=ft.Column(
             [
@@ -1379,8 +1438,8 @@ def main(page: ft.Page):
         expand=True,
     )
 
-    # Left column containing header and money
-    left_column = ft.Column([header_card, money_card], spacing=16, width=770, tight=True)
+    # Left column containing header, money and status
+    left_column = ft.Column([header_card, money_card, status_card], spacing=16, width=770, tight=True)
     
     scheda_view = ft.Row(
         [

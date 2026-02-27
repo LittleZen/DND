@@ -133,6 +133,22 @@ def init_db() -> None:
         )
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS status (
+                character_id INTEGER PRIMARY KEY,
+                adrenalina INTEGER DEFAULT 0,
+                confusione INTEGER DEFAULT 0,
+                svantaggio INTEGER DEFAULT 0,
+                malus TEXT DEFAULT '',
+                FOREIGN KEY(character_id) REFERENCES characters(id) ON DELETE CASCADE
+            )
+            """
+        )
+        # Migration: add malus column if missing
+        cols = _table_columns(conn, "status")
+        if "malus" not in cols:
+            cur.execute("ALTER TABLE status ADD COLUMN malus TEXT DEFAULT ''")
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS items_library (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -253,6 +269,10 @@ def create_character(nome: str) -> int:
             "INSERT INTO money (character_id, corone, scellini, rame) VALUES (?, ?, ?, ?)",
             (character_id, money["corone"], money["scellini"], money["rame"]),
         )
+        cur.execute(
+            "INSERT INTO status (character_id, adrenalina, confusione, svantaggio, malus) VALUES (?, 0, 0, 0, '')",
+            (character_id,),
+        )
         conn.commit()
     return character_id
 
@@ -281,6 +301,10 @@ def load_character(character_id: int) -> dict:
             "SELECT corone, scellini, rame FROM money WHERE character_id = ?",
             (character_id,),
         ).fetchone()
+        status_row = cur.execute(
+            "SELECT adrenalina, confusione, svantaggio, malus FROM status WHERE character_id = ?",
+            (character_id,),
+        ).fetchone()
     if row is None:
         return {
             "nome": "",
@@ -292,6 +316,7 @@ def load_character(character_id: int) -> dict:
             "imparato": [],
             "appunti": "",
             "money": default_money(),
+            "status": {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": ""},
             "avatar_path": "",
         }
     nome, motivazione, xp_raw, inventario_raw, appunti, avatar_path = row
@@ -318,6 +343,14 @@ def load_character(character_id: int) -> dict:
             "scellini": money_row[1],
             "rame": money_row[2],
         }
+    status = {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": ""}
+    if status_row:
+        status = {
+            "adrenalina": bool(status_row[0]),
+            "confusione": bool(status_row[1]),
+            "svantaggio": bool(status_row[2]),
+            "malus": status_row[3] or "",
+        }
     return {
         "nome": nome,
         "motivazione": motivazione,
@@ -328,6 +361,7 @@ def load_character(character_id: int) -> dict:
         "imparato": imparato,
         "appunti": appunti,
         "money": money,
+        "status": status,
         "avatar_path": avatar_path or "",
     }
 
@@ -383,8 +417,13 @@ def save_character(character_id: int, data: dict) -> None:
             )
         money = normalize_money(data.get("money", {}))
         cur.execute(
-            "UPDATE money SET corone = ?, scellini = ?, rame = ? WHERE character_id = ?",
-            (money["corone"], money["scellini"], money["rame"], character_id),
+            "INSERT OR REPLACE INTO money (character_id, corone, scellini, rame) VALUES (?, ?, ?, ?)",
+            (character_id, money["corone"], money["scellini"], money["rame"]),
+        )
+        status = data.get("status", {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": ""})
+        cur.execute(
+            "INSERT OR REPLACE INTO status (character_id, adrenalina, confusione, svantaggio, malus) VALUES (?, ?, ?, ?, ?)",
+            (character_id, int(status.get("adrenalina", False)), int(status.get("confusione", False)), int(status.get("svantaggio", False)), status.get("malus", "")),
         )
         conn.commit()
 
