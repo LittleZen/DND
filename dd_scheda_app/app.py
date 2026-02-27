@@ -589,7 +589,7 @@ def main(page: ft.Page):
                         with open(p, "rb") as f:
                             b = f.read()
                         data_uri = f"data:image/png;base64,{base64.b64encode(b).decode('ascii')}"
-                        new_img = ft.Image(src=data_uri, width=80, height=80)
+                        new_img = ft.Image(src=data_uri, width=96, height=96)
                         new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
                         try:
                             image_holder.content = new_container
@@ -688,7 +688,7 @@ def main(page: ft.Page):
             
             print(f"[DEBUG] Image size: {len(image_data)} bytes, base64: {len(b64_string)} chars")
             
-            img_control = ft.Image(src=data_uri, width=80, height=80)
+            img_control = ft.Image(src=data_uri, width=96, height=96)
             avatar_status.value = f"Avatar: {default_avatar.name}"
             print("[OK] Avatar loaded as base64 data URI")
         else:
@@ -696,12 +696,12 @@ def main(page: ft.Page):
             print(f"[WARNING] Avatar file not found at {default_avatar}")
             img_control = ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.PERSON, size=40, color=ft.Colors.OUTLINE),
+                    ft.Icon(ft.Icons.PERSON, size=48, color=ft.Colors.OUTLINE),
                     ft.Text("Avatar non trovato", size=10)
                 ], alignment=ft.MainAxisAlignment.CENTER, spacing=4),
                 alignment=ft.Alignment(0, 0),
-                height=80,
-                width=80,
+                height=96,
+                width=96,
             )
     except Exception as ex:
         # Error loading avatar
@@ -711,8 +711,8 @@ def main(page: ft.Page):
         img_control = ft.Container(
             content=ft.Text("Errore avatar", size=10),
             alignment=ft.Alignment(0, 0),
-            height=80,
-            width=80,
+            height=96,
+            width=96,
         )
 
     # Add FilePicker and a button to change the image; save copies to img/avatars
@@ -754,7 +754,7 @@ def main(page: ft.Page):
                             b = f.read()
                         b64 = base64.b64encode(b).decode("ascii")
                         data_uri = f"data:image/png;base64,{b64}"
-                        new_img = ft.Image(src=data_uri, width=80, height=80)
+                        new_img = ft.Image(src=data_uri, width=96, height=96)
                         new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
                         image_holder.content = new_container
                         img_control = new_container
@@ -792,7 +792,7 @@ def main(page: ft.Page):
                         b = f.read()
                     b64 = base64.b64encode(b).decode("ascii")
                     data_uri = f"data:image/png;base64,{b64}"
-                    new_img = ft.Image(src=data_uri, width=80, height=80)
+                    new_img = ft.Image(src=data_uri, width=96, height=96)
                     new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
                     try:
                         image_holder.content = new_container
@@ -1098,22 +1098,14 @@ def main(page: ft.Page):
             except Exception as e:
                 return False, f"Formato immagine non valido: {e}"
             
-            # Resize to 80x80 (icon size) - crop center to maintain square
+            # Resize to 96x96 (icon size) - stretch to exact size
             width, height = img.size
-            needs_resize = width != 80 or height != 80
+            needs_resize = width != 96 or height != 96
             
             if needs_resize:
-                # Crop to square first (center crop)
-                min_dim = min(width, height)
-                left = (width - min_dim) // 2
-                top = (height - min_dim) // 2
-                right = left + min_dim
-                bottom = top + min_dim
-                img = img.crop((left, top, right, bottom))
-                
-                # Resize to 80x80
-                img = img.resize((80, 80), Image.Resampling.LANCZOS)
-                print(f"[AVATAR] Resized from {width}x{height} to 80x80")
+                # Resize to 96x96
+                img = img.resize((96, 96), Image.Resampling.LANCZOS)
+                print(f"[AVATAR] Resized from {width}x{height} to 96x96")
             
             # Convert to RGB/RGBA for PNG (handles WebP, JPEG, etc.)
             if img.mode not in ('RGB', 'RGBA'):
@@ -1123,7 +1115,7 @@ def main(page: ft.Page):
             img.save(dest_path, 'PNG', optimize=True)
             
             final_size = dest_path.stat().st_size
-            msg = f"Avatar salvato: 80x80px"
+            msg = f"Avatar salvato: 96x96px"
             if needs_resize:
                 msg += f" (ridimensionato da {width}x{height})"
             msg += f", {final_size // 1024}KB"
@@ -1137,8 +1129,8 @@ def main(page: ft.Page):
 
     image_holder = ft.Container(
         content=img_control,
-        width=80,
-        height=80,
+        width=96,
+        height=96,
         alignment=ft.Alignment(0, 0),
     )
 
@@ -1162,7 +1154,7 @@ def main(page: ft.Page):
         border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
         border_radius=12,
         bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-        width=150,
+        width=170,
         alignment=ft.Alignment(0, 0),
     )
 
@@ -1214,7 +1206,7 @@ def main(page: ft.Page):
                     b64_string = base64.b64encode(image_data).decode('ascii')
                     data_uri = f"data:image/png;base64,{b64_string}"
                     
-                    new_img = ft.Image(src=data_uri, width=80, height=80)
+                    new_img = ft.Image(src=data_uri, width=96, height=96)
                     new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0,0))
                     
                     # Update only the image control in image_inner
@@ -1242,7 +1234,7 @@ def main(page: ft.Page):
             else:
                 # show visible fallback in UI
                 print(f"[RELOAD_AVATAR] Avatar file NOT found at {dest}")
-                fb = ft.Container(content=ft.Text("Nessun avatar", size=10), alignment=ft.Alignment(0,0), height=80, width=80)
+                fb = ft.Container(content=ft.Text("Nessun avatar", size=10), alignment=ft.Alignment(0,0), height=96, width=96)
                 try:
                     image_holder.content = fb
                     image_holder.update()
