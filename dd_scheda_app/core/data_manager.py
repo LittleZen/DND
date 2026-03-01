@@ -25,7 +25,7 @@ class DataManager:
         self.data = initial_data or {
             "inventario": [],
             "money": {"corone": 0, "scellini": 0, "rame": 0},
-            "status": {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": ""},
+            "status": {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": "nulla"},
             "qualita": [],
             "imparato": [],
             "inventario_raw": "",

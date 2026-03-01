@@ -21,6 +21,7 @@ from .settings import load_settings, save_settings
 from .storage import (
     add_item_to_library,
     create_character,
+    delete_character,
     delete_item_from_library,
     get_all_items,
     get_item_by_id,
@@ -207,13 +208,7 @@ def main(page: ft.Page):
         tooltip="1 token nero aggiuntivo, se lanci i dadi: lancia 2 volte e prendi il risultato MINORE",
     )
 
-    malus = ft.TextField(
-        label="Malus",
-        value=data.get("status", {}).get("malus", ""),
-        expand=True,
-        tooltip="Inserisci il malus del tuo personaggio",
-        on_change=on_status_change,
-    )
+    malus = ft.TextField(label="Malus", value=dm.data.get("status", {}).get("malus", "nulla"), expand=True, hint_text="nulla", tooltip="Inserisci il malus del tuo personaggio", on_change=on_status_change)
 
     inv_grid = ft.GridView(
         expand=True,
@@ -341,7 +336,7 @@ def main(page: ft.Page):
                 name, qty = parse_inventory_item(str(it))
                 category = DEFAULT_CATEGORY
                 item_id = None
-            normalized.append({"name": name, "qty": max(1, qty), "category": category, "item_id": item_id})
+            normalized.append({"name": name, "qty": max(1, qty), "category": category, "item_id": item_id})  
 
         def sort_key(it):
             cat = it.get("category") or DEFAULT_CATEGORY
@@ -666,46 +661,121 @@ def main(page: ft.Page):
         dm.data.update(load_character(character_id))
         dm.data["money"] = normalize_money(dm.data.get("money", {}))
         dm.data.setdefault("qualita", [])
-        dm.data.setdefault("status", {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": ""})
+        dm.data.setdefault("status", {"adrenalina": False, "confusione": False, "svantaggio": False, "malus": "nulla"})
         apply_data_to_fields()
         selector_view.visible = False
         editor_view.visible = True
         page.update()
 
+    def go_back_to_selector(e=None):
+        refresh_character_list()
+        editor_view.visible = False
+        selector_view.visible = True
+        page.update()
+
     def refresh_character_list():
-        character_list.controls.clear()
+        character_grid.controls.clear()
         characters = list_characters()
-        if not characters:
-            character_list.controls.append(
-                ft.Text("Nessun personaggio trovato. Creane uno nuovo!", italic=True)
-            )
-        for ch in characters:
-            row = ft.Row(
-                [
-                    ft.Text(ch["nome"], weight=ft.FontWeight.BOLD),
-                    ft.Text(f"ID {ch['id']}", color=ft.Colors.OUTLINE),
-                    ft.Button(
-                        "Apri",
-                        icon=ft.Icons.OPEN_IN_NEW,
-                        on_click=lambda e, cid=ch["id"]: load_character_by_id(cid),
-                    ),
+
+        create_card = ft.Container(
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Icon(ft.Icons.ADD_CIRCLE, size=80, color=ft.Colors.OUTLINE),
+                        ft.Text("Crea nuovo personaggio", weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+                    ],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=8,
+                    expand=True,
+                ),
+                height=160,
+            ),
+            on_click=create_new_character,
+            padding=12,
+            border_radius=12,
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            bgcolor=ft.Colors.TRANSPARENT,
+        )
+        character_grid.controls.append(create_card)
+
+        def build_avatar_thumb(character_id: int, avatar_path: str | None):
+            # Priorità: 1) avatar_{id}.png, 2) avatar_path dal DB, 3) default
+            candidates = [avatars_dir / f"avatar_{character_id}.png"]
+            if avatar_path:
+                p = Path(avatar_path)
+                if not p.is_absolute():
+                    p = (Path(__file__).parent / p).resolve()
+                candidates.append(p)
+            candidates.append(avatars_dir / "avatar_default.png")
+            
+            for path in candidates:
+                if path.exists():
+                    try:
+                        with open(path, "rb") as f:
+                            image_data = f.read()
+                        b64_string = base64.b64encode(image_data).decode("ascii")
+                        data_uri = f"data:image/png;base64,{b64_string}"
+                        return ft.Container(
+                            content=ft.Image(src=data_uri, width=96, height=96),
+                            width=96,
+                            height=96,
+                            border_radius=48,
+                            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                        )
+                    except Exception:
+                        continue
+            return ft.Icon(ft.Icons.PERSON, size=80, color=ft.Colors.OUTLINE)
+
+        def confirm_delete_character(character_id: int, nome: str):
+            def do_delete(ev):
+                delete_character(character_id)
+                page.dialog.open = False
+                refresh_character_list()
+                page.update()
+
+            def cancel_delete(ev):
+                page.dialog.open = False
+                page.update()
+
+            page.dialog = ft.AlertDialog(
+                title=ft.Text("Elimina personaggio", weight=ft.FontWeight.BOLD),
+                content=ft.Text(f"Vuoi eliminare '{nome}'?"),
+                actions=[
+                    ft.TextButton("Annulla", on_click=cancel_delete),
+                    ft.TextButton("Elimina", on_click=do_delete),
                 ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             )
-            character_list.controls.append(
-                ft.Container(
-                    content=ft.GestureDetector(
-                        content=row,
-                        on_double_tap=lambda e, cid=ch["id"]: load_character_by_id(cid),
+            page.dialog.open = True
+            page.update()
+
+        for ch in characters:
+            avatar = build_avatar_thumb(ch["id"], ch.get("avatar_path"))
+            
+            final_card = ft.Container(
+                content=ft.Container(
+                    content=ft.Column(
+                        [
+                            avatar,
+                            ft.Text(ch["nome"], weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+                        ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=8,
+                        expand=True,
                     ),
-                    padding=8,
-                )
+                    height=160,
+                ),
+                on_click=lambda e, cid=ch["id"]: load_character_by_id(cid),
+                padding=12,
+                border_radius=12,
+                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                bgcolor=ft.Colors.SURFACE_CONTAINER,
             )
+            character_grid.controls.append(final_card)
 
     def create_new_character(e):
-        name = (new_character_name.value or "").strip() or "Senza nome"
-        character_id = create_character(name)
-        new_character_name.value = ""
+        character_id = create_character("Senza nome")
         refresh_character_list()
         load_character_by_id(character_id)
 
@@ -1313,8 +1383,7 @@ def main(page: ft.Page):
         content=ft.Column(
             [
                 ft.Text("Status Negativo", size=16, weight=ft.FontWeight.BOLD),
-                ft.Row([adrenalina_switch, confusione_switch, svantaggio_switch], spacing=20, wrap=True),
-                ft.Row([malus], spacing=12),
+                ft.Row([adrenalina_switch, confusione_switch, svantaggio_switch, malus], spacing=12),
             ],
             spacing=8,
         ),
@@ -1781,32 +1850,37 @@ def main(page: ft.Page):
     btn_qualita.on_click = lambda e: set_view("qualita")
     btn_items.on_click = lambda e: set_view("items")
 
-    character_list = ft.ListView(expand=True, spacing=6, padding=8)
-    new_character_name = ft.TextField(label="Nuovo personaggio", expand=True)
-
+    character_grid = ft.GridView(
+        expand=True,
+        max_extent=220,
+        child_aspect_ratio=0.85,
+        spacing=12,
+        run_spacing=12,
+        padding=8,
+    )
     selector_view = ft.Container(
         content=ft.Column(
             [
                 ft.Text("Seleziona un personaggio", size=18, weight=ft.FontWeight.BOLD),
-                character_list,
-                ft.Row(
-                    [
-                        new_character_name,
-                        ft.Button("Crea", icon=ft.Icons.ADD, on_click=create_new_character),
-                    ],
-                    spacing=8,
-                ),
+                character_grid,
             ],
             spacing=12,
             expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         ),
         visible=True,
+        alignment=ft.Alignment(0, -1),
     )
 
     editor_view = ft.Column(
         [
             ft.Row(
                 [
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_BACK,
+                        tooltip="Torna alla selezione personaggi",
+                        on_click=go_back_to_selector,
+                    ),
                     ft.IconButton(icon=ft.Icons.SAVE, tooltip="Salva manualmente", on_click=lambda e: do_save()),
                     theme_toggle,
                     ft.Container(expand=True),
