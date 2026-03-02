@@ -3,11 +3,14 @@ import re
 import sys
 import threading
 import random
+import logging
 
 sys.path.append(str(Path(__file__).parent))
 
 import flet as ft
 import base64
+from .ui.avatar_utils import image_container_from_path
+logging.basicConfig(level=logging.INFO)
 from .bank import normalize_money, to_int
 from .core import DataManager
 from .inventory import (
@@ -58,13 +61,9 @@ def main(page: ft.Page):
     # For backward compatibility with existing code
     data = dm.data
     
-    def schedule_save():
-        """Wrapper for dm.schedule_save() - maintains backward compatibility."""
-        dm.schedule_save()
-    
-    def do_save():
-        """Wrapper for dm.do_save() - maintains backward compatibility."""
-        dm.do_save()
+    # expose DataManager save methods directly to keep compatibility but avoid wrapper boilerplate
+    schedule_save = dm.schedule_save
+    do_save = dm.do_save
     
     # Alias for current_character_id for backward compatibility  
     class CharacterIDRef:
@@ -79,6 +78,8 @@ def main(page: ft.Page):
             return str(self.dm.current_character_id)
     
     current_character_id_ref = CharacterIDRef(dm)
+
+    # image helper extracted to dd_scheda_app.ui.avatar_utils.image_container_from_path
 
     # Basic UI fields that some handlers expect
     nome = ft.TextField(label="Nome", value=dm.data.get("nome", ""), expand=True)
@@ -316,9 +317,7 @@ def main(page: ft.Page):
         update_xp_background()
         schedule_save()
 
-    def sync_all_fields_to_data():
-        """Unused function - can be removed"""
-        pass
+    # removed unused `sync_all_fields_to_data` to reduce noise
 
     def refresh_inventory():
         inv_grid.controls.clear()
@@ -616,21 +615,16 @@ def main(page: ft.Page):
             avatar_path = data.get("avatar_path")
             if avatar_path:
                 p = Path(avatar_path)
-                if p.exists():
+                if not p.is_absolute():
+                    p = (Path(__file__).parent / p).resolve()
+                new_container = image_container_from_path(p)
+                if new_container is not None:
                     try:
-                        with open(p, "rb") as f:
-                            b = f.read()
-                        data_uri = f"data:image/png;base64,{base64.b64encode(b).decode('ascii')}"
-                        new_img = ft.Image(src=data_uri, width=96, height=96)
-                        new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
+                        image_holder.content = new_container
+                        image_holder.update()
                         try:
-                            image_holder.content = new_container
-                            image_holder.update()
-                            try:
-                                avatar_status.value = f"Avatar caricato: {p.name} ({p.stat().st_size} bytes)"
-                                avatar_status.update()
-                            except Exception:
-                                pass
+                            avatar_status.value = f"Avatar caricato: {p.name} ({p.stat().st_size} bytes)"
+                            avatar_status.update()
                         except Exception:
                             pass
                     except Exception:
@@ -639,7 +633,8 @@ def main(page: ft.Page):
                 # try to load any available avatar for current character
                 reload_avatar()
         except Exception:
-            pass
+            import traceback
+            traceback.print_exc()
         # avatar is placeholder image for now
         money = normalize_money(data.get("money", {}))
         corone.value = str(money.get("corone", 0))
@@ -728,26 +723,14 @@ def main(page: ft.Page):
             return ft.Icon(ft.Icons.PERSON, size=80, color=ft.Colors.OUTLINE)
 
         def confirm_delete_character(character_id: int, nome: str):
-            def do_delete(ev):
+            # Immediate deletion without confirmation dialog to avoid modal blocking clicks
+            try:
+                logging.info("Deleting character %s (%s)", character_id, nome)
                 delete_character(character_id)
-                page.dialog.open = False
                 refresh_character_list()
                 page.update()
-
-            def cancel_delete(ev):
-                page.dialog.open = False
-                page.update()
-
-            page.dialog = ft.AlertDialog(
-                title=ft.Text("Elimina personaggio", weight=ft.FontWeight.BOLD),
-                content=ft.Text(f"Vuoi eliminare '{nome}'?"),
-                actions=[
-                    ft.TextButton("Annulla", on_click=cancel_delete),
-                    ft.TextButton("Elimina", on_click=do_delete),
-                ],
-            )
-            page.dialog.open = True
-            page.update()
+            except Exception:
+                logging.exception("Failed to delete character %s", character_id)
 
         for ch in characters:
             avatar = build_avatar_thumb(ch["id"], ch.get("avatar_path"))
@@ -760,17 +743,33 @@ def main(page: ft.Page):
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=8,
                 ),
+                expand=False,
                 on_click=lambda e, cid=ch["id"]: load_character_by_id(cid),
             )
 
+            # IconButton inside a Container to ensure click events are handled reliably
+            delete_icon_btn = ft.IconButton(
+                icon=ft.Icons.CLOSE,
+                icon_size=22,
+                tooltip="Elimina personaggio",
+                on_click=lambda e, cid=ch["id"], nome=ch.get("nome", ""): confirm_delete_character(cid, nome),
+                icon_color=ft.Colors.RED_400,
+                padding=0,
+                width=28,
+                height=28,
+                bgcolor=None,
+            )
+
             delete_control = ft.Container(
-                content=ft.Icon(ft.Icons.CLOSE, color=ft.Colors.RED_400, size=18),
+                content=delete_icon_btn,
                 width=40,
                 height=40,
                 alignment=ft.Alignment(0, 0),
                 border_radius=20,
                 bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                on_click=lambda e, cid=ch["id"], nome=ch.get("nome", ""): confirm_delete_character(cid, nome),
+                padding=0,
+                margin=ft.Margin(bottom=8),
+                on_click=lambda e, cid=ch["id"], nome=ch.get("nome", ""): (logging.info("delete clicked %s", cid), confirm_delete_character(cid, nome)),
             )
 
             card_inner = ft.Container(
@@ -810,26 +809,20 @@ def main(page: ft.Page):
     # Load default avatar (avatar_default.png - proper PNG format)
     try:
         default_avatar = avatars_dir / "avatar_default.png"
-        print(f"[DEBUG] Looking for avatar at: {default_avatar}")
-        print(f"[DEBUG] File exists: {default_avatar.exists()}")
-        
+        logging.debug("Looking for avatar at: %s", default_avatar)
+        logging.debug("File exists: %s", default_avatar.exists())
+
         if default_avatar.exists():
-            # Read file as bytes and encode to base64
-            with open(default_avatar, "rb") as f:
-                image_data = f.read()
-            
-            # Create base64 data URI
-            b64_string = base64.b64encode(image_data).decode('ascii')
-            data_uri = f"data:image/png;base64,{b64_string}"
-            
-            print(f"[DEBUG] Image size: {len(image_data)} bytes, base64: {len(b64_string)} chars")
-            
-            img_control = ft.Image(src=data_uri, width=96, height=96)
-            avatar_status.value = f"Avatar: {default_avatar.name}"
-            print("[OK] Avatar loaded as base64 data URI")
+            new_container = image_container_from_path(default_avatar)
+            if new_container is not None:
+                img_control = new_container
+                avatar_status.value = f"Avatar: {default_avatar.name}"
+                logging.info("Avatar loaded as base64 data URI: %s", default_avatar)
+            else:
+                logging.warning("Failed to build image container for default avatar: %s", default_avatar)
         else:
             # No default avatar found
-            print(f"[WARNING] Avatar file not found at {default_avatar}")
+            logging.warning("Avatar file not found at %s", default_avatar)
             img_control = ft.Container(
                 content=ft.Column([
                     ft.Icon(ft.Icons.PERSON, size=48, color=ft.Colors.OUTLINE),
@@ -841,9 +834,7 @@ def main(page: ft.Page):
             )
     except Exception as ex:
         # Error loading avatar
-        print(f"[ERROR] Avatar exception: {ex}")
-        import traceback
-        traceback.print_exc()
+        logging.exception("Avatar exception while loading default avatar: %s", ex)
         img_control = ft.Container(
             content=ft.Text("Errore avatar", size=10),
             alignment=ft.Alignment(0, 0),
@@ -886,17 +877,14 @@ def main(page: ft.Page):
                     
                     # Load as base64 data URI
                     try:
-                        with open(dest, "rb") as f:
-                            b = f.read()
-                        b64 = base64.b64encode(b).decode("ascii")
-                        data_uri = f"data:image/png;base64,{b64}"
-                        new_img = ft.Image(src=data_uri, width=96, height=96)
-                        new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
-                        image_holder.content = new_container
-                        img_control = new_container
-                        image_holder.update()
+                        new_container = image_container_from_path(dest)
+                        if new_container is not None:
+                            image_holder.content = new_container
+                            img_control = new_container
+                            image_holder.update()
                     except Exception:
-                        pass
+                        import traceback
+                        traceback.print_exc()
                     dm.data["avatar_path"] = str(dest)
                     dm.do_save()  # Use immediate save instead of scheduled save
                     reload_avatar()  # Force UI refresh after save
@@ -911,6 +899,7 @@ def main(page: ft.Page):
                     page.snack_bar = ft.SnackBar(ft.Text("File non valido selezionato"))
                     page.snack_bar.open = True
                     page.update()
+                    logging.warning("File picker provided invalid file or bytes")
                     return
                     
 
@@ -924,20 +913,17 @@ def main(page: ft.Page):
             if success:
                 # display by embedding image as base64 data URI (avoids file:// issues)
                 try:
-                    with open(dest, "rb") as f:
-                        b = f.read()
-                    b64 = base64.b64encode(b).decode("ascii")
-                    data_uri = f"data:image/png;base64,{b64}"
-                    new_img = ft.Image(src=data_uri, width=96, height=96)
-                    new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0, 0))
-                    try:
-                        image_holder.content = new_container
-                        img_control = new_container
-                        image_holder.update()
-                    except Exception:
-                        img_control = new_container
+                    new_container = image_container_from_path(dest)
+                    if new_container is not None:
+                        try:
+                            image_holder.content = new_container
+                            img_control = new_container
+                            image_holder.update()
+                        except Exception:
+                            img_control = new_container
                 except Exception:
-                    pass
+                    import traceback
+                    traceback.print_exc()
                 dm.data["avatar_path"] = str(dest)
                 dm.do_save()  # Use immediate save instead of scheduled save
                 reload_avatar()  # Force UI refresh after save
@@ -977,33 +963,36 @@ def main(page: ft.Page):
                     page.update()
                     return
                 dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
-                
+
                 # Validate and convert avatar with size constraints
                 success, message = validate_and_convert_avatar(src_path, dest)
-                
+
                 if not success:
                     page.snack_bar = ft.SnackBar(ft.Text(message))
                     page.snack_bar.open = True
                     page.update()
+                    logging.warning("Avatar validation failed: %s", message)
                     return
-                
-                # Update data and save to database
-                dm.data["avatar_path"] = str(dest)
-                dm.do_save()
-                
-                # Close dialog
-                page.dialog.open = False
-                
-                # Reload avatar
-                reload_avatar()
-                
+
+                # Update data, save and reload avatar
                 try:
+                    dm.data["avatar_path"] = str(dest)
+                    dm.do_save()
+                    page.dialog.open = False
+                    reload_avatar()
                     page.snack_bar = ft.SnackBar(ft.Text(message))
                     page.snack_bar.open = True
                     page.update()
                 except Exception:
-                    pass
+                    logging.exception("Error saving and reloading avatar %s", dest)
+                    try:
+                        page.snack_bar = ft.SnackBar(ft.Text("Errore durante il salvataggio dell'avatar"))
+                        page.snack_bar.open = True
+                        page.update()
+                    except Exception:
+                        pass
             except Exception as ex:
+                logging.exception("Unexpected error in use_path_click: %s", ex)
                 try:
                     page.snack_bar = ft.SnackBar(ft.Text(f"Errore: {ex}"))
                     page.snack_bar.open = True
@@ -1035,9 +1024,7 @@ def main(page: ft.Page):
                     if file_path:
                         selected_file[0] = file_path
                 except Exception as ex:
-                    print(f"[FILE_PICKER] Error: {ex}")
-                    import traceback
-                    traceback.print_exc()
+                    logging.exception("[FILE_PICKER] Error picking file: %s", ex)
 
             # Run file picker and wait
             picker_thread = threading.Thread(target=_pick, daemon=True)
@@ -1241,7 +1228,7 @@ def main(page: ft.Page):
             if needs_resize:
                 # Resize to 96x96
                 img = img.resize((96, 96), Image.Resampling.LANCZOS)
-                print(f"[AVATAR] Resized from {width}x{height} to 96x96")
+                logging.debug("[AVATAR] Resized from %dx%d to 96x96", width, height)
             
             # Convert to RGB/RGBA for PNG (handles WebP, JPEG, etc.)
             if img.mode not in ('RGB', 'RGBA'):
@@ -1259,8 +1246,7 @@ def main(page: ft.Page):
             return True, msg
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
+            logging.exception("Error converting avatar %s", src_path)
             return False, f"Errore conversione: {e}"
 
     image_holder = ft.Container(
@@ -1323,53 +1309,43 @@ def main(page: ft.Page):
         try:
             avatars_dir = Path(__file__).parent / "img" / "avatars"
             dest = avatars_dir / f"avatar_{dm.current_character_id or 'default'}.png"
-            print(f"[RELOAD_AVATAR] Looking for: {dest}")
-            print(f"[RELOAD_AVATAR] Character ID: {dm.current_character_id}")
-            print(f"[RELOAD_AVATAR] File exists: {dest.exists()}")
+            logging.debug("[RELOAD_AVATAR] Looking for: %s", dest)
+            logging.debug("[RELOAD_AVATAR] Character ID: %s", dm.current_character_id)
+            logging.debug("[RELOAD_AVATAR] File exists: %s", dest.exists())
             
             # Fallback to avatar_default.png if character-specific avatar doesn't exist
             if not dest.exists():
                 fallback_dest = avatars_dir / "avatar_default.png"
                 if fallback_dest.exists():
                     dest = fallback_dest
-                    print(f"[RELOAD_AVATAR] Using fallback: {dest}")
+                    logging.debug("[RELOAD_AVATAR] Using fallback: %s", dest)
             
             if dest.exists():
                 try:
-                    # Read file and encode to base64 (same as initial load)
-                    with open(dest, "rb") as f:
-                        image_data = f.read()
-                    b64_string = base64.b64encode(image_data).decode('ascii')
-                    data_uri = f"data:image/png;base64,{b64_string}"
-                    
-                    new_img = ft.Image(src=data_uri, width=96, height=96)
-                    new_container = ft.Container(content=new_img, padding=0, alignment=ft.Alignment(0,0))
-                    
-                    # Update only the image control in image_inner
-                    image_holder.content = new_container
-                    img_control = new_container
-                    image_holder.update()
-                    print(f"[RELOAD_AVATAR] Successfully updated with base64 data URI")
-                    
-                    # show confirmation and update status text
-                    try:
-                        avatar_status.value = f"Avatar caricato: {dest.name}"
-                        avatar_status.update()
-                    except Exception:
-                        pass
-                    try:
-                        page.snack_bar = ft.SnackBar(ft.Text(f"Avatar caricato: {dest.name}"))
-                        page.snack_bar.open = True
-                    except Exception:
-                        pass
+                    new_container = image_container_from_path(dest)
+                    if new_container is not None:
+                        # Update only the image control in image_inner
+                        image_holder.content = new_container
+                        img_control = new_container
+                        image_holder.update()
+                        logging.info("[RELOAD_AVATAR] Successfully updated with base64 data URI: %s", dest)
+                        # show confirmation and update status text
+                        try:
+                            avatar_status.value = f"Avatar caricato: {dest.name}"
+                            avatar_status.update()
+                        except Exception:
+                            pass
+                        try:
+                            page.snack_bar = ft.SnackBar(ft.Text(f"Avatar caricato: {dest.name}"))
+                            page.snack_bar.open = True
+                        except Exception:
+                            pass
                 except Exception as ex:
-                    print(f"[RELOAD_AVATAR] Error: {ex}")
-                    import traceback
-                    traceback.print_exc()
+                    logging.exception("[RELOAD_AVATAR] Error processing avatar %s: %s", dest, ex)
                 page.update()
             else:
                 # show visible fallback in UI
-                print(f"[RELOAD_AVATAR] Avatar file NOT found at {dest}")
+                logging.warning("[RELOAD_AVATAR] Avatar file NOT found at %s", dest)
                 fb = ft.Container(content=ft.Text("Nessun avatar", size=10), alignment=ft.Alignment(0,0), height=96, width=96)
                 try:
                     image_holder.content = fb
@@ -1380,9 +1356,7 @@ def main(page: ft.Page):
                 page.snack_bar.open = True
                 page.update()
         except Exception as ex:
-            print(f"[RELOAD_AVATAR] Exception: {ex}")
-            import traceback
-            traceback.print_exc()
+            logging.exception("[RELOAD_AVATAR] Exception while reloading avatar: %s", ex)
             page.snack_bar = ft.SnackBar(ft.Text("Errore nel caricamento dell'avatar"))
             page.snack_bar.open = True
             page.update()
