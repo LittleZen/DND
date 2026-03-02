@@ -752,21 +752,43 @@ def main(page: ft.Page):
         for ch in characters:
             avatar = build_avatar_thumb(ch["id"], ch.get("avatar_path"))
             
-            final_card = ft.Container(
-                content=ft.Container(
-                    content=ft.Column(
-                        [
-                            avatar,
-                            ft.Text(ch["nome"], weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
-                        ],
-                        alignment=ft.MainAxisAlignment.CENTER,
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=8,
-                        expand=True,
-                    ),
-                    height=160,
+            # build card with avatar+name centered and a small round delete button anchored bottom-center
+            top_block = ft.Container(
+                content=ft.Column(
+                    [avatar, ft.Text(ch["nome"], weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=8,
                 ),
                 on_click=lambda e, cid=ch["id"]: load_character_by_id(cid),
+            )
+
+            delete_control = ft.Container(
+                content=ft.Icon(ft.Icons.CLOSE, color=ft.Colors.RED_400, size=16),
+                width=32,
+                height=32,
+                alignment=ft.Alignment(0, 0),
+                border_radius=16,
+                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                on_click=lambda e, cid=ch["id"], nome=ch.get("nome", ""): confirm_delete_character(cid, nome),
+            )
+
+            card_inner = ft.Container(
+                content=ft.Column(
+                    [
+                        top_block,
+                        ft.Row([delete_control], alignment=ft.MainAxisAlignment.CENTER),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=8,
+                    expand=True,
+                ),
+                height=160,
+            )
+
+            final_card = ft.Container(
+                content=card_inner,
                 padding=12,
                 border_radius=12,
                 border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
