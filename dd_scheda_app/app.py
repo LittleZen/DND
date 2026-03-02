@@ -764,12 +764,12 @@ def main(page: ft.Page):
             )
 
             delete_control = ft.Container(
-                content=ft.Icon(ft.Icons.CLOSE, color=ft.Colors.RED_400, size=16),
-                width=32,
-                height=32,
+                content=ft.Icon(ft.Icons.CLOSE, color=ft.Colors.RED_400, size=18),
+                width=40,
+                height=40,
                 alignment=ft.Alignment(0, 0),
-                border_radius=16,
-                bgcolor=ft.Colors.SURFACE_CONTAINER,
+                border_radius=20,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
                 on_click=lambda e, cid=ch["id"], nome=ch.get("nome", ""): confirm_delete_character(cid, nome),
             )
 
